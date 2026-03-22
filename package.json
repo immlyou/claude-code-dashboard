@@ -1,0 +1,51 @@
+{
+  "name": "claude-code-dashboard",
+  "version": "2.3.0",
+  "main": "main.js",
+  "author": "imchris",
+  "license": "ISC",
+  "description": "macOS menu bar dashboard for monitoring Claude Code CLI sessions",
+  "scripts": {
+    "start": "electron .",
+    "cli": "node index.js",
+    "dist": "electron-builder --mac",
+    "dist:dmg": "electron-builder --mac dmg",
+    "dist:zip": "electron-builder --mac zip"
+  },
+  "build": {
+    "appId": "com.imchris.claude-code-dashboard",
+    "productName": "Claude Code Dashboard",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "title": "Claude Code Dashboard",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "files": [
+      "main.js",
+      "collector.js",
+      "icon-draw.js",
+      "ui/**/*",
+      "assets/**/*"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    }
+  },
+  "dependencies": {
+    "menubar": "^9.5.2"
+  },
+  "devDependencies": {
+    "electron": "^34.5.8",
+    "electron-builder": "^26.8.1"
+  }
+}

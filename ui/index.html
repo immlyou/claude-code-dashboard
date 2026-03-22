@@ -1,0 +1,3206 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Code Dashboard</title>
+  <style>
+    :root {
+      --bg: rgba(30, 30, 30, 0.92);
+      --bg-card: rgba(255, 255, 255, 0.06);
+      --bg-card-hover: rgba(255, 255, 255, 0.10);
+      --text: #f0f0f0;
+      --text-secondary: #999;
+      --accent: #7c6ef0;
+      --accent-light: #a594ff;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --cyan: #67e8f9;
+      --orange: #fb923c;
+      --border: rgba(255, 255, 255, 0.08);
+      --bar-bg: rgba(255, 255, 255, 0.05);
+    }
+
+    [data-theme="light"] {
+      --bg: rgba(245, 245, 247, 0.95);
+      --bg-card: rgba(0, 0, 0, 0.04);
+      --bg-card-hover: rgba(0, 0, 0, 0.07);
+      --text: #1a1a1a;
+      --text-secondary: #666;
+      --accent: #6c5ce7;
+      --accent-light: #7c6ef0;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --cyan: #06b6d4;
+      --orange: #f97316;
+      --border: rgba(0, 0, 0, 0.06);
+      --bar-bg: rgba(0, 0, 0, 0.04);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      user-select: none;
+      border-radius: 10px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-left { display: flex; align-items: center; gap: 8px; }
+    .header-logo {
+      width: 20px; height: 20px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: white; font-weight: 700;
+    }
+    .header h1 { font-size: 13px; font-weight: 600; }
+    .header-right { display: flex; align-items: center; gap: 6px; }
+    .session-badge {
+      background: var(--accent);
+      color: white;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+    .refresh-time { font-size: 10px; color: var(--text-secondary); }
+
+    /* Scrollable content */
+    .content {
+      padding: 8px 12px 12px;
+      overflow-y: auto;
+      max-height: 620px;
+    }
+
+    /* Section */
+    .section { margin-bottom: 10px; }
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      padding-left: 2px;
+    }
+
+    /* ── Plan Usage ── */
+    .plan-usage-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+    }
+    .plan-usage-card:last-child { margin-bottom: 0; }
+    .plan-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .plan-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .plan-detail {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .plan-pct {
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .plan-bar {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--bar-bg);
+      overflow: hidden;
+    }
+    .plan-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+    .plan-bar-fill.green { background: linear-gradient(90deg, #4ade80, #22c55e); }
+    .plan-bar-fill.yellow { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+    .plan-bar-fill.orange { background: linear-gradient(90deg, #fb923c, #f97316); }
+    .plan-bar-fill.red { background: linear-gradient(90deg, #f87171, #ef4444); }
+    .plan-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 9px;
+      color: var(--text-secondary);
+    }
+    .plan-login-hint {
+      text-align: center;
+      padding: 16px 12px;
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+    .plan-login-btn {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 16px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+    .plan-login-btn:hover { opacity: 0.85; }
+    .plan-refresh {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 9px;
+      color: var(--text-secondary);
+    }
+    .plan-refresh-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .plan-refresh-btn:hover { border-color: var(--accent); color: var(--accent-light); }
+
+    /* Session rows (horizontal bar style) */
+    .session-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .session-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      padding: 9px 12px;
+      gap: 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .session-row:hover { border-color: var(--accent); }
+    .session-row .bar-bg {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      border-radius: 8px 0 0 8px;
+      background: linear-gradient(90deg, rgba(124,110,240,0.18), rgba(124,110,240,0.04));
+      transition: width 0.5s ease;
+      pointer-events: none;
+    }
+    .session-row.dead .bar-bg {
+      background: linear-gradient(90deg, rgba(248,113,113,0.12), rgba(248,113,113,0.02));
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .status-dot.active {
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+    .status-dot.dead { background: var(--red); opacity: 0.6; }
+    .session-project {
+      font-size: 12px;
+      font-weight: 600;
+      min-width: 60px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      position: relative;
+    }
+    .session-model {
+      font-size: 9px;
+      color: var(--cyan);
+      font-weight: 500;
+      background: var(--bar-bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .session-meta {
+      display: flex;
+      gap: 10px;
+      font-size: 10px;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      margin-left: auto;
+      position: relative;
+    }
+    .session-meta span {
+      white-space: nowrap;
+    }
+    .session-meta .val {
+      font-weight: 600;
+      color: var(--accent-light);
+    }
+
+    /* Comparison grid (today vs month) */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .compare-col {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+    .compare-col .col-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 8px;
+    }
+    .compare-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 3px 0;
+    }
+    .compare-row .label {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .compare-row .val {
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .compare-cost {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .compare-cost .label {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .compare-cost .cost-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--yellow);
+    }
+
+    /* Efficiency strip */
+    .efficiency-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .eff-card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .eff-card .eff-val {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .eff-card .eff-label {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Usage overview cards */
+    .usage-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .usage-card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+    .usage-card .title {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+    .usage-card .value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .usage-card .sub {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Progress bar */
+    .progress-wrap {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+    }
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .progress-label { font-size: 11px; font-weight: 500; }
+    .progress-pct { font-size: 11px; font-weight: 600; color: var(--accent-light); }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: var(--bar-bg);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-light));
+      transition: width 0.5s ease;
+    }
+    .progress-fill.warn {
+      background: linear-gradient(90deg, var(--yellow), #f97316);
+    }
+    .progress-fill.danger {
+      background: linear-gradient(90deg, var(--red), #dc2626);
+    }
+
+    /* Chart */
+    .chart-wrap {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .chart-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      color: var(--text-secondary);
+    }
+    .chart-legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+    }
+    .chart-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 60px;
+      padding-top: 4px;
+    }
+    .chart-bar-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      justify-content: flex-end;
+    }
+    .chart-bar-stack {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .chart-bar {
+      width: 100%;
+      min-height: 0px;
+      border-radius: 2px 2px 0 0;
+      transition: height 0.3s ease;
+    }
+    .chart-bar.tokens {
+      background: linear-gradient(180deg, var(--accent-light), var(--accent));
+    }
+    .chart-bar.msgs {
+      background: linear-gradient(180deg, var(--cyan), #0891b2);
+      border-radius: 0;
+    }
+    .chart-bar-label {
+      font-size: 8px;
+      color: var(--text-secondary);
+      margin-top: 3px;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      height: 28px;
+      overflow: hidden;
+    }
+
+    /* Model bar chart */
+    .model-card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+    .model-item {
+      margin-bottom: 8px;
+    }
+    .model-item:last-child { margin-bottom: 0; }
+    .model-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3px;
+    }
+    .model-name { font-size: 11px; font-weight: 600; }
+    .model-total { font-size: 10px; color: var(--text-secondary); }
+    .model-bar-track {
+      width: 100%;
+      height: 10px;
+      background: var(--bar-bg);
+      border-radius: 5px;
+      overflow: hidden;
+      display: flex;
+    }
+    .model-bar-seg {
+      height: 100%;
+      transition: width 0.5s ease;
+    }
+    .model-bar-seg.input { background: var(--accent); }
+    .model-bar-seg.output { background: var(--orange); }
+    .model-bar-seg.cache { background: var(--green); }
+    .model-bar-legend {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      font-size: 9px;
+      color: var(--text-secondary);
+    }
+    .model-bar-legend .seg-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 2px;
+      margin-right: 2px;
+      vertical-align: middle;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .color-green { color: var(--green); }
+    .color-yellow { color: var(--yellow); }
+    .color-cyan { color: var(--cyan); }
+    .color-accent { color: var(--accent-light); }
+    .color-orange { color: var(--orange); }
+
+    /* Account card */
+    .account-card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--border);
+    }
+    .account-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .account-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 700; color: white;
+    }
+    .account-info { flex: 1; }
+    .account-name { font-size: 14px; font-weight: 600; }
+    .account-email { font-size: 10px; color: var(--text-secondary); }
+    .account-plan-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: white;
+    }
+    .account-plan-badge.inactive {
+      background: linear-gradient(135deg, var(--red), #dc2626);
+    }
+    .account-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .account-metric {
+      text-align: center;
+      padding: 6px 4px;
+      background: var(--bar-bg);
+      border-radius: 6px;
+    }
+    .account-metric .value {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .account-metric .label {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+    .intensity-bar-wrap {
+      margin-top: 8px;
+    }
+    .intensity-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .intensity-label { font-size: 10px; color: var(--text-secondary); }
+    .intensity-value { font-size: 10px; font-weight: 600; }
+    .intensity-bar {
+      width: 100%;
+      height: 8px;
+      background: var(--bar-bg);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .intensity-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    .intensity-fill.low {
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+    }
+    .intensity-fill.mid {
+      background: linear-gradient(90deg, var(--yellow), #f97316);
+    }
+    .intensity-fill.high {
+      background: linear-gradient(90deg, #f97316, var(--red));
+    }
+    .guest-passes {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .guest-passes .count {
+      font-weight: 600;
+      color: var(--accent-light);
+    }
+
+    /* Console button */
+    .console-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      font-family: inherit;
+    }
+    .console-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent);
+    }
+    .console-btn .icon { font-size: 14px; }
+
+    /* Footer links */
+    .footer-links {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* Activity heatmap */
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: repeat(24, 1fr);
+      gap: 2px;
+    }
+    .heatmap-cell {
+      aspect-ratio: 1;
+      border-radius: 3px;
+      background: var(--bar-bg);
+      position: relative;
+    }
+    .heatmap-cell.h1 { background: rgba(124,110,240,0.2); }
+    .heatmap-cell.h2 { background: rgba(124,110,240,0.4); }
+    .heatmap-cell.h3 { background: rgba(124,110,240,0.6); }
+    .heatmap-cell.h4 { background: rgba(124,110,240,0.85); }
+    .heatmap-labels {
+      display: grid;
+      grid-template-columns: repeat(24, 1fr);
+      gap: 2px;
+      margin-top: 2px;
+    }
+    .heatmap-labels span {
+      text-align: center;
+      font-size: 7px;
+      color: var(--text-secondary);
+    }
+    .heatmap-wrap {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+
+    /* Records card */
+    .records-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .record-item {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .record-item .rec-val {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .record-item .rec-label {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Project table */
+    .project-table {
+      background: var(--bg-card);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .project-table-row {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+    }
+    .project-table-row:last-child { border-bottom: none; }
+    .project-table-row.header {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      background: var(--bar-bg);
+    }
+    .project-table-row .proj-name {
+      flex: 1;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-table-row .proj-cost {
+      width: 60px;
+      text-align: right;
+      font-weight: 600;
+      color: var(--yellow);
+    }
+    .project-table-row .proj-lines {
+      width: 55px;
+      text-align: right;
+      font-size: 10px;
+    }
+    .proj-lines .added { color: var(--green); }
+    .proj-lines .removed { color: var(--red); }
+
+    /* Desktop card */
+    .desktop-card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .desktop-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #d4a574, #c4956a);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .desktop-info { flex: 1; }
+    .desktop-info .dt-name { font-size: 12px; font-weight: 600; }
+    .desktop-info .dt-ver { font-size: 10px; color: var(--text-secondary); }
+    .desktop-badge {
+      font-size: 9px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--green);
+      color: white;
+    }
+    .desktop-badge.not-found {
+      background: var(--text-secondary);
+    }
+
+    /* All Projects list */
+    .all-projects-wrap {
+      background: var(--bg-card);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .all-projects-wrap::-webkit-scrollbar { width: 4px; }
+    .all-projects-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .ap-row {
+      display: flex;
+      align-items: center;
+      padding: 7px 12px;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .ap-row:last-child { border-bottom: none; }
+    .ap-row:hover { background: var(--bg-card-hover); }
+    .ap-row.header {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      background: var(--bar-bg);
+      position: sticky;
+      top: 0;
+    }
+    .ap-exists {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .ap-exists.yes { background: var(--green); box-shadow: 0 0 4px var(--green); }
+    .ap-exists.no { background: var(--text-secondary); opacity: 0.4; }
+    .ap-name {
+      flex: 1;
+      font-size: 11px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ap-stat {
+      width: 42px;
+      text-align: right;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .ap-stat.accent { color: var(--accent-light); font-weight: 600; }
+    .ap-stat.cyan { color: var(--cyan); font-weight: 600; }
+    .ap-count {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      padding: 0 2px;
+    }
+
+    /* ── Settings button ── */
+    .settings-btn {
+      width: 32px; height: 32px;
+      border: none; background: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 24px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+      padding: 0;
+    }
+    .settings-btn:hover {
+      color: var(--accent-light);
+      background: var(--bg-card-hover);
+    }
+
+    /* ── Settings overlay ── */
+    #settingsOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 8000;
+      background: var(--bg);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #settingsOverlay.open { display: flex; }
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-header h2 { font-size: 14px; font-weight: 600; }
+    .settings-close {
+      border: none; background: none;
+      color: var(--text-secondary);
+      font-size: 18px; cursor: pointer;
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .settings-close:hover { color: var(--text); background: var(--bg-card-hover); }
+    .settings-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+    }
+    .settings-section { margin-bottom: 18px; }
+    .settings-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    /* Language selector */
+    .lang-select {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 30px;
+      transition: border-color 0.15s;
+    }
+    .lang-select:hover, .lang-select:focus {
+      border-color: var(--accent);
+    }
+    .lang-select option {
+      background: var(--bg);
+      color: var(--text);
+      padding: 6px;
+    }
+
+    /* Changelog */
+    .changelog-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .changelog-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .changelog-ver {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .changelog-ver .ver-tag {
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      background: var(--accent);
+      padding: 1px 8px;
+      border-radius: 10px;
+    }
+    .changelog-ver .ver-tag.latest {
+      background: var(--green);
+    }
+    .changelog-ver .ver-date {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .changelog-body {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .changelog-body li {
+      margin-left: 14px;
+      margin-bottom: 1px;
+    }
+
+    /* ── Tooltip guide ── */
+    .tip-trigger {
+      position: relative;
+      cursor: help;
+    }
+    #tooltip {
+      position: fixed;
+      z-index: 9999;
+      max-width: 260px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgba(20, 20, 28, 0.96);
+      border: 1px solid rgba(124, 110, 240, 0.35);
+      color: #e8e8e8;
+      font-size: 11px;
+      line-height: 1.5;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    [data-theme="light"] #tooltip {
+      background: rgba(255, 255, 255, 0.96);
+      border-color: rgba(108, 92, 231, 0.25);
+      color: #222;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+    #tooltip.visible { opacity: 1; }
+    #tooltip .tip-title {
+      font-weight: 700;
+      font-size: 11px;
+      color: var(--accent-light);
+      margin-bottom: 3px;
+    }
+    [data-theme="light"] #tooltip .tip-title {
+      color: var(--accent);
+    }
+    /* ── Splash screen ── */
+    #splashScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 1;
+      transition: opacity 0.5s ease-out;
+    }
+    #splashScreen.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .splash-logo {
+      width: 64px; height: 64px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px; color: white; font-weight: 700;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(124, 110, 240, 0.3);
+    }
+    .splash-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .splash-version {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+    .splash-copyright {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: center;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <!-- Splash screen -->
+  <div id="splashScreen">
+    <div class="splash-logo">C</div>
+    <div class="splash-title">Claude Code Dashboard</div>
+    <div class="splash-version">v2.3.0</div>
+    <div class="splash-copyright">
+      © 2026 imchris. All rights reserved.<br>
+      Built for macOS menu bar monitoring.
+    </div>
+  </div>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="header-logo">C</div>
+      <h1>Claude Code Dashboard</h1>
+    </div>
+    <div class="header-right">
+      <button class="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="settingsOverlay">
+    <div class="settings-header">
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="settings-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-section">
+        <div class="settings-section-title" id="langSectionTitle">Language</div>
+        <select class="lang-select" id="langSelect" onchange="switchLang(this.value)"></select>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title" id="aboutSectionTitle">About</div>
+        <div style="margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;">Claude Code Dashboard</span>
+          <span style="font-size:11px;color:var(--text-secondary);margin-left:6px;">v2.3.0</span>
+        </div>
+        <div class="changelog-list" id="changelogList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating tooltip -->
+  <div id="tooltip"></div>
+
+  <div class="content">
+    <!-- Claude Max Account -->
+    <!-- Plan Usage Limits -->
+    <div class="section tip-trigger" id="tip-plan" data-tip-title="Plan Usage" data-tip="Shows your Claude subscription usage limits scraped from claude.ai. Includes current session, weekly model limits, and extra usage spending.">
+      <div class="section-title" id="sec-plan">Plan Usage</div>
+      <div id="planUsageContainer">
+        <div class="plan-login-hint" id="planLoginHint">
+          Loading usage data...
+        </div>
+      </div>
+    </div>
+
+    <div class="section tip-trigger" id="tip-account" data-tip-title="Claude Max 帳號" data-tip="">
+      <div class="section-title" id="sec-account">Claude Max Account</div>
+      <div id="accountCard" class="account-card"></div>
+    </div>
+
+    <!-- Active Sessions -->
+    <div class="section tip-trigger" id="tip-sessions" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-sessions">Active Sessions</div>
+      <div id="sessionsContainer"></div>
+    </div>
+
+    <!-- Today vs Month comparison -->
+    <div class="section tip-trigger" id="tip-compare" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-compare">Usage Comparison</div>
+      <div id="compareContainer" class="compare-grid"></div>
+    </div>
+
+    <!-- Efficiency metrics -->
+    <div class="section tip-trigger" id="tip-efficiency" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-efficiency">Efficiency</div>
+      <div id="efficiencyContainer" class="efficiency-strip"></div>
+    </div>
+
+    <!-- Today usage intensity bar -->
+    <div class="section tip-trigger" id="tip-progress" data-tip-title="" data-tip="">
+      <div id="usageProgressContainer"></div>
+    </div>
+
+    <!-- Token + Message chart -->
+    <div class="section tip-trigger" id="tip-chart" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-chart">Daily Activity (14d)</div>
+      <div class="chart-wrap">
+        <div class="chart-legend" id="chartLegend"></div>
+        <div class="chart-bars" id="tokenChart"></div>
+      </div>
+    </div>
+
+    <!-- Model usage bar chart -->
+    <div class="section tip-trigger" id="tip-model" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-model">Model Usage</div>
+      <div class="model-card" id="modelCard"></div>
+    </div>
+
+    <!-- All time stats -->
+    <div class="section tip-trigger" id="tip-alltime" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-alltime">All Time</div>
+      <div class="usage-grid" id="allTimeGrid"></div>
+    </div>
+
+    <!-- Activity by Hour -->
+    <div class="section tip-trigger" id="tip-heatmap" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-heatmap">Activity by Hour</div>
+      <div class="heatmap-wrap">
+        <div class="heatmap-grid" id="heatmapGrid"></div>
+        <div class="heatmap-labels" id="heatmapLabels"></div>
+      </div>
+    </div>
+
+    <!-- Records -->
+    <div class="section tip-trigger" id="tip-records" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-records">Records & Stats</div>
+      <div class="records-grid" id="recordsGrid"></div>
+    </div>
+
+    <!-- Project Breakdown -->
+    <div class="section tip-trigger" id="tip-projects" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-projects">Project Breakdown</div>
+      <div id="projectTable"></div>
+    </div>
+
+    <!-- Claude Desktop -->
+    <div class="section tip-trigger" id="tip-desktop" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-desktop">Claude Desktop</div>
+      <div id="desktopCard"></div>
+    </div>
+
+    <!-- All Projects -->
+    <div class="section tip-trigger" id="tip-allprojects" data-tip-title="" data-tip="">
+      <div class="section-title" id="sec-allprojects">All Claude Projects</div>
+      <div id="allProjectsContainer"></div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="section">
+      <div class="section-title" id="sec-links">Quick Links</div>
+      <div class="footer-links">
+        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/billing')">
+          <span class="icon">💳</span>
+          帳號用量 / Billing
+        </button>
+        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/usage')">
+          <span class="icon">📊</span>
+          Usage 儀表板
+        </button>
+        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/plans')">
+          <span class="icon">⚡</span>
+          方案 / Plans
+        </button>
+        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/keys')">
+          <span class="icon">🔑</span>
+          API Keys
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer, shell } = require('electron');
+
+    function openExternal(url) {
+      shell.openExternal(url);
+    }
+
+    function openConsole(url) {
+      ipcRenderer.invoke('open-console', url);
+    }
+
+    function formatTokens(n) {
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      return String(n);
+    }
+
+    function formatCost(n) {
+      if (n >= 1000) return '$' + (n / 1000).toFixed(1) + 'K';
+      if (n >= 100) return '$' + Math.round(n);
+      return '$' + n.toFixed(2);
+    }
+
+    function formatDuration(ms) {
+      const s = Math.floor(ms / 1000);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      if (h > 0) return h + 'h ' + m + 'm';
+      if (m > 0) return m + 'm';
+      return '<1m';
+    }
+
+    function shortModel(m) {
+      return String(m)
+        .replace('claude-', '')
+        .replace(/-\d{8}$/, '')
+        .replace('-latest', '');
+    }
+
+    function renderSessions(sessions) {
+      const container = document.getElementById('sessionsContainer');
+      const active = sessions.filter(s => s.alive);
+      const dead = sessions.filter(s => !s.alive);
+
+      const activeEl = document.getElementById('activeCount');
+      if (activeEl) activeEl.textContent = active.length + ' active';
+
+      if (sessions.length === 0) {
+        container.innerHTML = '<div class="empty-state">No CLI sessions detected</div>';
+        return;
+      }
+
+      const allSessions = [...active, ...dead];
+      const maxOut = Math.max(...allSessions.map(s => s.outputTokens), 1);
+
+      let rows = '';
+      for (const s of allSessions) {
+        const barPct = Math.max(5, (s.outputTokens / maxOut) * 100);
+        const deadClass = s.alive ? '' : ' dead';
+        const modelLabel = shortModel(s.model);
+        rows += `
+          <div class="session-row${deadClass}">
+            <div class="bar-bg" style="width:${barPct}%"></div>
+            <span class="status-dot ${s.alive ? 'active' : 'dead'}"></span>
+            <span class="session-project" title="${escHtml(s.cwd)}">${escHtml(s.project)}</span>
+            <span class="session-model">${escHtml(modelLabel)}</span>
+            <div class="session-meta">
+              <span><span class="val">${formatTokens(s.outputTokens)}</span> out</span>
+              <span><span class="val">${s.messageCount}</span> msg</span>
+              <span>${formatDuration(s.uptime)}</span>
+            </div>
+          </div>`;
+      }
+      container.innerHTML = `<div class="session-list">${rows}</div>`;
+    }
+
+    function renderCompare(data) {
+      const { today, month } = data;
+      document.getElementById('compareContainer').innerHTML = `
+        <div class="compare-col">
+          <div class="col-title">Today</div>
+          <div class="compare-row">
+            <span class="label">Messages</span>
+            <span class="val color-accent">${today.messages.toLocaleString()}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Tokens</span>
+            <span class="val color-cyan">${formatTokens(today.tokens)}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Sessions</span>
+            <span class="val">${today.sessions}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Tools</span>
+            <span class="val">${today.tools}</span>
+          </div>
+          <div class="compare-cost">
+            <span class="label">Est. Cost</span>
+            <span class="cost-val">${formatCost(today.cost)}</span>
+          </div>
+        </div>
+        <div class="compare-col">
+          <div class="col-title">This Month</div>
+          <div class="compare-row">
+            <span class="label">Messages</span>
+            <span class="val color-accent">${month.messages.toLocaleString()}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Tokens</span>
+            <span class="val color-cyan">${formatTokens(month.tokens)}</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Sessions</span>
+            <span class="val">—</span>
+          </div>
+          <div class="compare-row">
+            <span class="label">Tools</span>
+            <span class="val">—</span>
+          </div>
+          <div class="compare-cost">
+            <span class="label">Est. Cost</span>
+            <span class="cost-val">${formatCost(month.cost)}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEfficiency(eff) {
+      document.getElementById('efficiencyContainer').innerHTML = `
+        <div class="eff-card">
+          <div class="eff-val color-accent">${formatTokens(eff.avgTokensPerMsg)}</div>
+          <div class="eff-label">Avg Tokens / Msg</div>
+        </div>
+        <div class="eff-card">
+          <div class="eff-val color-green">${eff.cacheHitRate}%</div>
+          <div class="eff-label">Cache Hit Rate</div>
+        </div>
+        <div class="eff-card">
+          <div class="eff-val color-orange">${eff.toolsPerMsg}</div>
+          <div class="eff-label">Tools / Msg</div>
+        </div>
+      `;
+    }
+
+    function renderUsageProgress(data) {
+      const { today, account } = data;
+      // Use historical average as reference instead of hardcoded 500
+      const avgMsgs = account.avgDailyTokens > 0
+        ? Math.max(1, Math.round(today.messages * (account.avgDailyTokens / Math.max(1, today.tokens || 1))))
+        : 100;
+      const dailyPct = Math.min(100, account.todayVsAvgPct);
+      let barClass = '';
+      if (dailyPct > 150) barClass = 'danger';
+      else if (dailyPct > 80) barClass = 'warn';
+
+      document.getElementById('usageProgressContainer').innerHTML = `
+        <div class="progress-wrap">
+          <div class="progress-header">
+            <span class="progress-label">Today vs Historical Average</span>
+            <span class="progress-pct">${account.todayVsAvgPct}% (avg ${formatTokens(account.avgDailyTokens)} tok/day)</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${barClass}" style="width: ${Math.min(100, dailyPct)}%"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderChart(dailyTokenHistory, dailyMsgHistory) {
+      const container = document.getElementById('tokenChart');
+      const legend = document.getElementById('chartLegend');
+
+      legend.innerHTML = `
+        <div class="chart-legend-item">
+          <div class="chart-legend-dot" style="background: var(--accent)"></div>
+          Tokens
+        </div>
+        <div class="chart-legend-item">
+          <div class="chart-legend-dot" style="background: var(--cyan)"></div>
+          Messages
+        </div>
+      `;
+
+      if (!dailyTokenHistory || dailyTokenHistory.length === 0) {
+        container.innerHTML = '<div class="empty-state">No data</div>';
+        return;
+      }
+
+      const maxTok = Math.max(...dailyTokenHistory.map(d => d.tokens), 1);
+      const msgs = dailyMsgHistory || [];
+      const maxMsg = Math.max(...msgs.map(d => d.messages), 1);
+
+      let html = '';
+      for (let i = 0; i < dailyTokenHistory.length; i++) {
+        const d = dailyTokenHistory[i];
+        const m = msgs[i] || { messages: 0 };
+        const tokH = Math.max(1, (d.tokens / maxTok) * 42);
+        const msgH = Math.max(1, (m.messages / maxMsg) * 14);
+        const label = d.date.slice(5);
+        html += `
+          <div class="chart-bar-col" title="${label}: ${formatTokens(d.tokens)} tok / ${m.messages} msg">
+            <div class="chart-bar-stack">
+              <div class="chart-bar tokens" style="height:${tokH}px"></div>
+              <div class="chart-bar msgs" style="height:${msgH}px"></div>
+            </div>
+            <div class="chart-bar-label">${label}</div>
+          </div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function renderModelUsage(aggregate) {
+      const card = document.getElementById('modelCard');
+      const models = Object.entries(aggregate.modelUsage);
+
+      if (models.length === 0) {
+        card.innerHTML = '<div class="empty-state">No model data</div>';
+        return;
+      }
+
+      // Find max total for relative bar sizing
+      const totals = models.map(([, u]) =>
+        (u.inputTokens || 0) + (u.outputTokens || 0) + (u.cacheReadInputTokens || 0)
+      );
+      const maxTotal = Math.max(...totals, 1);
+
+      let html = `
+        <div class="model-bar-legend">
+          <span><span class="seg-dot" style="background:var(--accent)"></span>Input</span>
+          <span><span class="seg-dot" style="background:var(--orange)"></span>Output</span>
+          <span><span class="seg-dot" style="background:var(--green)"></span>Cache</span>
+        </div>
+      `;
+
+      for (const [model, usage] of models) {
+        const name = shortModel(model);
+        const inp = usage.inputTokens || 0;
+        const out = usage.outputTokens || 0;
+        const cache = usage.cacheReadInputTokens || 0;
+        const total = inp + out + cache;
+        const barW = Math.max(5, (total / maxTotal) * 100);
+        const inpPct = total > 0 ? (inp / total * 100) : 0;
+        const outPct = total > 0 ? (out / total * 100) : 0;
+        const cachePct = total > 0 ? (cache / total * 100) : 0;
+        const cacheRate = (inp + cache) > 0 ? Math.round(cache / (inp + cache) * 100) : 0;
+
+        html += `
+          <div class="model-item">
+            <div class="model-item-header">
+              <span class="model-name">${escHtml(name)}</span>
+              <span class="model-total">${formatTokens(total)} total · ${cacheRate}% cache</span>
+            </div>
+            <div class="model-bar-track" style="width:${barW}%">
+              <div class="model-bar-seg input" style="width:${inpPct}%"></div>
+              <div class="model-bar-seg output" style="width:${outPct}%"></div>
+              <div class="model-bar-seg cache" style="width:${cachePct}%"></div>
+            </div>
+          </div>`;
+      }
+      card.innerHTML = html;
+    }
+
+    function renderAllTime(aggregate) {
+      document.getElementById('allTimeGrid').innerHTML = `
+        <div class="usage-card">
+          <div class="title">Total Messages</div>
+          <div class="value color-cyan">${aggregate.totalMessages.toLocaleString()}</div>
+          <div class="sub">${aggregate.totalSessions} sessions</div>
+        </div>
+        <div class="usage-card">
+          <div class="title">Est. Total Cost</div>
+          <div class="value color-yellow">${formatCost(aggregate.costEstimate)}</div>
+          <div class="sub">based on token pricing</div>
+        </div>
+      `;
+    }
+
+    // ── Plan Usage ──
+    let planUsageCache = null;
+    let planFetching = false;
+
+    function barColor(pct) {
+      if (pct >= 80) return 'red';
+      if (pct >= 50) return 'orange';
+      if (pct >= 25) return 'yellow';
+      return 'green';
+    }
+
+    function renderPlanUsage(data) {
+      const container = document.getElementById('planUsageContainer');
+
+      if (!data || data.error === 'not_logged_in') {
+        container.innerHTML = `
+          <div class="plan-login-hint">
+            Please login to claude.ai first to view usage data.
+            <br>
+            <button class="plan-login-btn" onclick="ipcRenderer.invoke('open-console-login')">Login to Claude</button>
+          </div>`;
+        return;
+      }
+
+      if (data.error === 'timeout') {
+        container.innerHTML = `
+          <div class="plan-login-hint">
+            Unable to load usage data. Please login first.
+            <br>
+            <button class="plan-login-btn" onclick="ipcRenderer.invoke('open-console-login')">Login to Claude</button>
+            <br><br>
+            <button class="plan-refresh-btn" onclick="fetchPlanUsage()">Retry</button>
+          </div>`;
+        return;
+      }
+
+      if (data.error) {
+        container.innerHTML = `<div class="plan-login-hint">Error: ${data.error}</div>`;
+        return;
+      }
+
+      let html = '';
+
+      // Render limit bars
+      for (const item of (data.limits || [])) {
+        const color = barColor(item.pct);
+        html += `
+          <div class="plan-usage-card">
+            <div class="plan-row">
+              <span class="plan-label">${item.label}</span>
+              <span class="plan-pct" style="color: var(--${color})">${item.pct}%</span>
+            </div>
+            <div class="plan-bar">
+              <div class="plan-bar-fill ${color}" style="width: ${item.pct}%"></div>
+            </div>
+            <div class="plan-meta">
+              <span>${item.reset || ''}</span>
+              <span>${item.pct}% used</span>
+            </div>
+          </div>`;
+      }
+
+      // Extra usage
+      if (data.extraUsage) {
+        const eu = data.extraUsage;
+        const euPct = eu.limit ? Math.round((eu.spent / eu.limit) * 100) : 0;
+        const euColor = barColor(euPct);
+        html += `
+          <div class="plan-usage-card">
+            <div class="plan-row">
+              <span class="plan-label">Extra Usage</span>
+              <span class="plan-pct" style="color: var(--${euColor})">$${eu.spent.toFixed(2)}</span>
+            </div>
+            <div class="plan-bar">
+              <div class="plan-bar-fill ${euColor}" style="width: ${euPct}%"></div>
+            </div>
+            <div class="plan-meta">
+              <span>${eu.reset || ''}</span>
+              <span>${eu.limit ? '$' + eu.limit.toFixed(0) + ' limit' : ''}</span>
+            </div>
+          </div>`;
+      }
+
+      if (!html) {
+        html = `<div class="plan-login-hint">No usage data found.
+          <br><button class="plan-login-btn" onclick="ipcRenderer.invoke('open-console-login')">Login to Claude</button>
+          <br><button class="plan-refresh-btn" style="margin-top:6px" onclick="fetchPlanUsage()">Retry</button></div>`;
+      } else {
+        html += `
+          <div class="plan-refresh">
+            <span>Last updated: ${new Date().toLocaleTimeString('zh-TW', { hour12: false })}</span>
+            <button class="plan-refresh-btn" onclick="fetchPlanUsage()">Refresh</button>
+          </div>`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    async function fetchPlanUsage() {
+      if (planFetching) return;
+      planFetching = true;
+      const container = document.getElementById('planUsageContainer');
+      container.innerHTML = '<div class="plan-login-hint">Loading usage data...</div>';
+      try {
+        const data = await ipcRenderer.invoke('fetch-plan-usage');
+        planUsageCache = data;
+        renderPlanUsage(data);
+      } catch (e) {
+        container.innerHTML = '<div class="plan-login-hint">Failed to load usage data.</div>';
+      }
+      planFetching = false;
+    }
+
+    function renderAccount(account) {
+      const card = document.getElementById('accountCard');
+      if (!account || !account.email) {
+        card.innerHTML = '<div class="empty-state">未偵測到 Claude 帳號</div>';
+        return;
+      }
+
+      const initial = (account.name || 'C')[0].toUpperCase();
+      const isActive = account.hasExtraUsage && !account.extraUsageDisabledReason;
+      const planLabel = isActive ? 'Max Active' : 'Limited';
+      const planClass = isActive ? '' : 'inactive';
+
+      const billingMap = {
+        'stripe_subscription': 'Pro / Max',
+        'api_key': 'API Key',
+      };
+      const billingDisplay = billingMap[account.billingType] || account.billingType;
+
+      const intensityPct = Math.min(100, account.todayVsPeakPct);
+      let intensityClass = 'low';
+      let intensityLabel = '低度使用';
+      if (intensityPct > 70) { intensityClass = 'high'; intensityLabel = '高度使用'; }
+      else if (intensityPct > 40) { intensityClass = 'mid'; intensityLabel = '中度使用'; }
+
+      let subAge = '';
+      if (account.subscriptionCreatedAt) {
+        const subDate = new Date(account.subscriptionCreatedAt);
+        const days = Math.floor((Date.now() - subDate.getTime()) / 86400000);
+        subAge = days + ' 天';
+      }
+
+      card.innerHTML = `
+        <div class="account-header">
+          <div class="account-avatar">${initial}</div>
+          <div class="account-info">
+            <div class="account-name">${escHtml(account.name)}</div>
+            <div class="account-email">${escHtml(account.email)}</div>
+          </div>
+          <span class="account-plan-badge ${planClass}">${planLabel}</span>
+        </div>
+
+        <div class="account-metrics">
+          <div class="account-metric">
+            <div class="value color-accent">${billingDisplay}</div>
+            <div class="label">方案</div>
+          </div>
+          <div class="account-metric">
+            <div class="value color-green">${subAge}</div>
+            <div class="label">訂閱天數</div>
+          </div>
+          <div class="account-metric">
+            <div class="value color-cyan">${escHtml(account.orgRole)}</div>
+            <div class="label">角色</div>
+          </div>
+        </div>
+
+        <div class="intensity-bar-wrap">
+          <div class="intensity-header">
+            <span class="intensity-label">今日使用強度（vs 歷史尖峰）</span>
+            <span class="intensity-value ${intensityClass === 'high' ? 'color-yellow' : ''}">${intensityPct}% · ${intensityLabel}</span>
+          </div>
+          <div class="intensity-bar">
+            <div class="intensity-fill ${intensityClass}" style="width: ${intensityPct}%"></div>
+          </div>
+        </div>
+
+        ${account.guestPassesRemaining !== null ? `
+        <div class="guest-passes">
+          🎟️ Guest Passes 剩餘: <span class="count">${account.guestPassesRemaining}</span>
+        </div>` : ''}
+      `;
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function refresh() {
+      try {
+        const data = await ipcRenderer.invoke('get-dashboard-data');
+        renderAccount(data.account);
+        renderSessions(data.sessions);
+        renderCompare(data);
+        renderEfficiency(data.efficiency);
+        renderUsageProgress(data);
+        renderChart(data.dailyTokenHistory, data.dailyMsgHistory);
+        renderModelUsage(data.aggregate);
+        renderAllTime(data.aggregate);
+        renderHeatmap(data.hourCounts);
+        renderRecords(data);
+        renderProjects(data.projectStats);
+        renderDesktop(data.desktopInfo);
+        renderAllProjects(data.allProjects);
+        const refreshEl = document.getElementById('refreshTime');
+        if (refreshEl) refreshEl.textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+      } catch (e) {
+        console.error('Refresh error:', e);
+      }
+    }
+
+    // Theme handling
+    ipcRenderer.on('theme-changed', (_, theme) => {
+      document.documentElement.setAttribute('data-theme', theme);
+    });
+
+    function renderHeatmap(hourCounts) {
+      const grid = document.getElementById('heatmapGrid');
+      const labels = document.getElementById('heatmapLabels');
+      if (!hourCounts || hourCounts.length === 0) {
+        grid.innerHTML = '<div class="empty-state">No data</div>';
+        labels.innerHTML = '';
+        return;
+      }
+      const max = Math.max(...hourCounts, 1);
+      let cells = '';
+      for (let h = 0; h < 24; h++) {
+        const v = hourCounts[h] || 0;
+        const pct = v / max;
+        let cls = '';
+        if (pct > 0.75) cls = 'h4';
+        else if (pct > 0.5) cls = 'h3';
+        else if (pct > 0.25) cls = 'h2';
+        else if (pct > 0) cls = 'h1';
+        cells += `<div class="heatmap-cell ${cls}" title="${h}:00 — ${v} sessions"></div>`;
+      }
+      grid.innerHTML = cells;
+      let lbls = '';
+      for (let h = 0; h < 24; h++) {
+        lbls += `<span>${h}</span>`;
+      }
+      labels.innerHTML = lbls;
+    }
+
+    function renderRecords(data) {
+      const grid = document.getElementById('recordsGrid');
+      const firstDate = data.firstSessionDate ? new Date(data.firstSessionDate).toLocaleDateString() : '—';
+      const totalDays = data.firstSessionDate
+        ? Math.floor((Date.now() - new Date(data.firstSessionDate).getTime()) / 86400000)
+        : 0;
+      const longest = data.longestSession;
+      const longestDur = longest ? formatDuration(longest.duration) : '—';
+      const longestMsgs = longest ? longest.messageCount : 0;
+
+      grid.innerHTML = `
+        <div class="record-item">
+          <div class="rec-val color-accent">${firstDate}</div>
+          <div class="rec-label">First Session</div>
+        </div>
+        <div class="record-item">
+          <div class="rec-val color-green">${totalDays} d</div>
+          <div class="rec-label">Days Using</div>
+        </div>
+        <div class="record-item">
+          <div class="rec-val color-cyan">${data.numStartups || 0}</div>
+          <div class="rec-label">Startups</div>
+        </div>
+        <div class="record-item">
+          <div class="rec-val color-yellow">${longestDur}</div>
+          <div class="rec-label">Longest Session</div>
+        </div>
+        <div class="record-item">
+          <div class="rec-val color-accent">${longestMsgs.toLocaleString()}</div>
+          <div class="rec-label">Msgs in Longest</div>
+        </div>
+        <div class="record-item">
+          <div class="rec-val color-orange">${data.webSearches || 0}</div>
+          <div class="rec-label">Web Searches</div>
+        </div>
+      `;
+    }
+
+    function renderProjects(projectStats) {
+      const container = document.getElementById('projectTable');
+      if (!projectStats || projectStats.length === 0) {
+        container.innerHTML = '<div class="empty-state">No project data</div>';
+        return;
+      }
+      const top = projectStats.slice(0, 10);
+      let rows = `
+        <div class="project-table-row header">
+          <span class="proj-name">Project</span>
+          <span class="proj-cost">Cost</span>
+          <span class="proj-lines">+/-</span>
+        </div>`;
+      for (const p of top) {
+        rows += `
+          <div class="project-table-row">
+            <span class="proj-name" title="${escHtml(p.name)}">${escHtml(p.name)}</span>
+            <span class="proj-cost">${formatCost(p.cost)}</span>
+            <span class="proj-lines"><span class="added">+${p.linesAdded.toLocaleString()}</span> <span class="removed">-${p.linesRemoved.toLocaleString()}</span></span>
+          </div>`;
+      }
+      container.innerHTML = `<div class="project-table">${rows}</div>`;
+    }
+
+    function renderDesktop(desktopInfo) {
+      const container = document.getElementById('desktopCard');
+      if (desktopInfo && desktopInfo.installed) {
+        container.innerHTML = `
+          <div class="desktop-card">
+            <div class="desktop-icon">🖥</div>
+            <div class="desktop-info">
+              <div class="dt-name">Claude Desktop</div>
+              <div class="dt-ver">v${escHtml(desktopInfo.version)}</div>
+            </div>
+            <span class="desktop-badge">Installed</span>
+          </div>`;
+      } else {
+        container.innerHTML = `
+          <div class="desktop-card">
+            <div class="desktop-icon" style="opacity:0.4">🖥</div>
+            <div class="desktop-info">
+              <div class="dt-name">Claude Desktop</div>
+              <div class="dt-ver">Not detected</div>
+            </div>
+            <span class="desktop-badge not-found">Not Found</span>
+          </div>`;
+      }
+    }
+
+    function renderAllProjects(allProjects) {
+      const container = document.getElementById('allProjectsContainer');
+      if (!allProjects || allProjects.length === 0) {
+        container.innerHTML = '<div class="empty-state">No projects found</div>';
+        return;
+      }
+      let rows = `
+        <div class="ap-row header">
+          <span style="width:7px"></span>
+          <span class="ap-name">Project</span>
+          <span class="ap-stat">Sess</span>
+          <span class="ap-stat">Msgs</span>
+          <span class="ap-stat">Tokens</span>
+        </div>`;
+      for (const p of allProjects) {
+        rows += `
+        <div class="ap-row" title="${escHtml(p.path)}">
+          <span class="ap-exists ${p.exists ? 'yes' : 'no'}"></span>
+          <span class="ap-name">${escHtml(p.name)}</span>
+          <span class="ap-stat accent">${p.sessionCount}</span>
+          <span class="ap-stat">${p.messageCount.toLocaleString()}</span>
+          <span class="ap-stat cyan">${formatTokens(p.totalTokens)}</span>
+        </div>`;
+      }
+      container.innerHTML = `
+        <div class="all-projects-wrap">${rows}</div>
+        <div class="ap-count">${allProjects.length} projects · ${allProjects.filter(p => p.exists).length} active</div>
+      `;
+    }
+
+    // ── i18n system ──
+    const LANGS = [
+      { code: 'zh-TW', flag: '🇹🇼', name: '繁體中文' },
+      { code: 'en',    flag: '🇺🇸', name: 'English' },
+      { code: 'ja',    flag: '🇯🇵', name: '日本語' },
+      { code: 'ko',    flag: '🇰🇷', name: '한국어' },
+      { code: 'zh-CN', flag: '🇨🇳', name: '简体中文' },
+      { code: 'de', flag: '🇩🇪', name: 'Deutsch' },
+      { code: 'fr', flag: '🇫🇷', name: 'Français' },
+      { code: 'es', flag: '🇪🇸', name: 'Español' },
+      { code: 'pt', flag: '🇧🇷', name: 'Português' },
+      { code: 'it', flag: '🇮🇹', name: 'Italiano' },
+      { code: 'ru', flag: '🇷🇺', name: 'Русский' },
+      { code: 'ar', flag: '🇸🇦', name: 'العربية' },
+      { code: 'hi', flag: '🇮🇳', name: 'हिन्दी' },
+      { code: 'th', flag: '🇹🇭', name: 'ไทย' },
+      { code: 'vi', flag: '🇻🇳', name: 'Tiếng Việt' },
+      { code: 'id', flag: '🇮🇩', name: 'Bahasa Indonesia' },
+      { code: 'tr', flag: '🇹🇷', name: 'Türkçe' },
+      { code: 'nl', flag: '🇳🇱', name: 'Nederlands' },
+      { code: 'sv', flag: '🇸🇪', name: 'Svenska' },
+      { code: 'pl', flag: '🇵🇱', name: 'Polski' },
+      { code: 'uk', flag: '🇺🇦', name: 'Українська' },
+      { code: 'ms', flag: '🇲🇾', name: 'Bahasa Melayu' },
+    ];
+
+    const I18N = {
+      'zh-TW': {
+        settings: '設定', language: '語言', about: '關於程式',
+        planUsage: '訂閱用量', accountTitle: 'Claude Max 帳號', sessionsTitle: '執行中的 Session',
+        usageCompare: '用量對比', efficiency: '效率指標',
+        dailyActivity: '每日活動 (14天)', modelUsage: '模型用量',
+        allTime: '歷史累計', quickLinks: '快速連結',
+        todayMessages: 'Today Messages', todayTokens: 'Tokens',
+        todaySessions: 'Sessions', todayTools: 'Tools',
+        thisMonth: '本月', today: '今天', estCost: 'Est. Cost',
+        avgTokenMsg: 'Avg Tokens / Msg', cacheHitRate: 'Cache Hit Rate',
+        toolsMsg: 'Tools / Msg', todayVsAvg: '今日 vs 歷史平均',
+        totalMessages: 'Total Messages', estTotalCost: 'Est. Total Cost',
+        noSession: '沒有偵測到 CLI session',
+        noAccount: '未偵測到 Claude 帳號',
+        plan: '方案', subDays: '訂閱天數', role: '角色',
+        intensityLabel: '今日使用強度（vs 歷史尖峰）',
+        low: '低度使用', mid: '中度使用', high: '高度使用',
+        guestPasses: 'Guest Passes 剩餘',
+        billing: '帳號用量 / Billing', usageDash: 'Usage 儀表板',
+        plans: '方案 / Plans', apiKeys: 'API Keys',
+        // Tooltips
+        tipAccount: '你的 Claude 訂閱帳號資訊。方案顯示目前的訂閱類型，訂閱天數是從開通到現在的天數。使用強度條會把你今天用的量跟歷史最高紀錄做比較，讓你知道今天用得多不多。',
+        tipSessions: '目前正在跑的 Claude Code CLI 工作階段。綠色圓點＝活躍中，紅色＝已結束。每一條的紫色背景長度代表這個 session 相對其他 session 用了多少 output token。右邊顯示使用的模型、輸出 token 數、訊息數和已執行時間。',
+        tipCompare: '左邊是「今天」的用量，右邊是「這個月」的累計。Messages 是你跟 Claude 來回的訊息數，Tokens 是 AI 處理的文字量（越多＝用越多資源），Est. Cost 是按照 API 定價估算的費用（Max 訂閱用戶實際不會被收這個錢）。',
+        tipEfficiency: 'Avg Tokens/Msg：每條訊息平均消耗多少 token，越低代表對話越精簡。Cache Hit Rate：AI 重複利用快取的比率，越高越省錢（100% 最好）。Tools/Msg：每條訊息平均呼叫幾次工具（讀檔、搜尋、執行指令等），數字高代表你在做複雜的工程任務。',
+        tipProgress: '這個進度條把你今天的使用量跟歷史每日平均做比較。超過 80% 會變橘色提醒，超過 150% 會變紅色，代表今天用得比平常多很多。',
+        tipChart: '過去 14 天每天的使用量圖表。紫色部分是 Token 消耗量（文字處理量），青色部分是 Message 數量（對話次數）。可以看出哪幾天特別忙碌。',
+        tipModel: '每個 AI 模型各自用了多少 token。長條圖分三個顏色：紫色＝Input（你送給 AI 的內容），橘色＝Output（AI 回覆的內容），綠色＝Cache（重複利用的快取，不用重新計算，比較省）。Cache 比例越高越好。',
+        tipAllTime: '從你開始使用 Claude Code 到現在的總計。Total Messages 是所有對話的訊息總數，Est. Total Cost 是如果按 API 定價計算的累計費用（Max 用戶實際不收費，但可以感受一下省了多少錢）。',
+        tipPlanTitle: '訂閱用量', tipPlan: '顯示你的 Claude 訂閱配額使用狀況，包含目前 Session 用量、每週模型配額、以及額外用量花費。資料從 claude.ai 設定頁面即時擷取。', tipAccountTitle: 'Claude Max 帳號', tipSessionsTitle: '執行中的 Session',
+        tipCompareTitle: '用量對比', tipEfficiencyTitle: '效率指標',
+        tipProgressTitle: '今日用量 vs 歷史平均', tipChartTitle: '14 天活動趨勢',
+        tipModelTitle: '模型用量分佈', tipAllTimeTitle: '歷史累計',
+        activityByHour: '每小時活動分佈', recordsStats: '紀錄與統計', projectBreakdown: '專案明細', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: '每個小格代表一天中的某個小時（0-23 點），顏色越深代表你在那個時段越常使用 Claude。可以看出你的工作習慣和高峰時段。',
+        tipRecords: '你使用 Claude Code 的各項紀錄，包括第一次使用日期、總使用天數、啟動次數、最長 session 的時長和訊息數、以及 Web 搜尋次數。',
+        tipProjects: '每個專案的最近一次 session 費用估算、新增和刪除的程式碼行數。按費用排序，可以看出哪個專案最燒錢。',
+        tipDesktop: '偵測是否有安裝 Claude Desktop 桌面版應用程式，以及目前的版本號。',
+        tipHeatmapTitle: '每小時活動分佈', tipRecordsTitle: '紀錄與統計', tipProjectsTitle: '專案明細', tipDesktopTitle: 'Claude Desktop',
+        allProjectsTitle: '所有 Claude 專案', tipAllProjects: '掃描你電腦上所有使用過 Claude Code 的專案。綠色圓點代表資料夾還存在，灰色代表已刪除或移動。顯示每個專案的 session 數、訊息數和 token 用量。', tipAllProjectsTitle: '所有 Claude 專案',
+      },
+      'en': {
+        settings: 'Settings', language: 'Language', about: 'About',
+        planUsage: 'Plan Usage', accountTitle: 'Claude Max Account', sessionsTitle: 'Active Sessions',
+        usageCompare: 'Usage Comparison', efficiency: 'Efficiency',
+        dailyActivity: 'Daily Activity (14d)', modelUsage: 'Model Usage',
+        allTime: 'All Time', quickLinks: 'Quick Links',
+        todayMessages: 'Today Messages', todayTokens: 'Tokens',
+        todaySessions: 'Sessions', todayTools: 'Tools',
+        thisMonth: 'This Month', today: 'Today', estCost: 'Est. Cost',
+        avgTokenMsg: 'Avg Tokens / Msg', cacheHitRate: 'Cache Hit Rate',
+        toolsMsg: 'Tools / Msg', todayVsAvg: 'Today vs Historical Average',
+        totalMessages: 'Total Messages', estTotalCost: 'Est. Total Cost',
+        noSession: 'No CLI sessions detected',
+        noAccount: 'No Claude account detected',
+        plan: 'Plan', subDays: 'Sub Days', role: 'Role',
+        intensityLabel: 'Today intensity (vs peak)',
+        low: 'Low', mid: 'Medium', high: 'High',
+        guestPasses: 'Guest Passes remaining',
+        billing: 'Billing', usageDash: 'Usage Dashboard',
+        plans: 'Plans', apiKeys: 'API Keys',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Claude Max Account', tipSessionsTitle: 'Active Sessions',
+        tipCompareTitle: 'Usage Comparison', tipEfficiencyTitle: 'Efficiency',
+        tipProgressTitle: 'Today vs Average', tipChartTitle: '14-Day Trend',
+        tipModelTitle: 'Model Usage', tipAllTimeTitle: 'All Time',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+        allProjectsTitle: 'All Claude Projects', tipAllProjects: 'Scans all Claude Code projects on your machine. Green dot = folder still exists, gray = deleted or moved. Shows sessions, messages, and token usage per project.', tipAllProjectsTitle: 'All Claude Projects',
+      },
+      'ja': {
+        settings: '設定', language: '言語', about: 'このアプリについて',
+        accountTitle: 'Claude Max アカウント', sessionsTitle: 'アクティブセッション',
+        usageCompare: '使用量比較', efficiency: '効率指標',
+        dailyActivity: 'デイリーアクティビティ (14日)', modelUsage: 'モデル使用量',
+        allTime: '累計', quickLinks: 'クイックリンク',
+        todayMessages: '今日のメッセージ', todayTokens: 'トークン',
+        todaySessions: 'セッション', todayTools: 'ツール',
+        thisMonth: '今月', today: '今日', estCost: '推定コスト',
+        avgTokenMsg: '平均トークン/メッセージ', cacheHitRate: 'キャッシュヒット率',
+        toolsMsg: 'ツール/メッセージ', todayVsAvg: '今日 vs 過去の平均',
+        totalMessages: '合計メッセージ', estTotalCost: '推定総コスト',
+        noSession: 'CLIセッションが検出されません',
+        noAccount: 'Claudeアカウントが検出されません',
+        plan: 'プラン', subDays: '契約日数', role: '役割',
+        intensityLabel: '今日の使用強度（vsピーク）',
+        low: '低い', mid: '中程度', high: '高い',
+        guestPasses: 'ゲストパス残り',
+        billing: '請求', usageDash: '使用量ダッシュボード',
+        plans: 'プラン', apiKeys: 'APIキー',
+        tipAccount: 'Claudeのサブスクリプション情報。プランタイプ、契約日数、使用強度バー（今日の使用量を過去最高と比較）を表示します。',
+        tipSessions: '現在実行中のClaude Code CLIセッション。緑＝アクティブ、赤＝終了。紫の背景バーは相対的なoutputトークン使用量を示します。',
+        tipCompare: '左が今日、右が今月の合計。Messages＝会話数、Tokens＝AI処理テキスト量、Est. Cost＝API価格に基づく推定費用（Maxユーザーは実際には課金されません）。',
+        tipEfficiency: '平均トークン/メッセージ：低いほど効率的。キャッシュヒット率：高いほどコスト効率が良い。ツール/メッセージ：高いほど複雑なエンジニアリングタスク。',
+        tipProgress: '今日の使用量を過去の日平均と比較。80%でオレンジ、150%で赤＝通常よりかなり多い使用量。',
+        tipChart: '過去14日間の使用量チャート。紫＝トークン量、シアン＝メッセージ数。',
+        tipModel: 'AIモデルごとのトークン使用量。紫＝Input、オレンジ＝Output、緑＝Cache。キャッシュ比率が高いほど良い。',
+        tipAllTime: 'Claude Code使用開始からの累計。推定総コストはAPI価格に基づきます。',
+        tipPlanTitle: 'プラン使用量', tipPlan: '現在のセッション使用量、週間モデル制限、追加使用料金を含むClaudeサブスクリプションの使用状況を表示します。claude.aiの設定ページからリアルタイムで取得します。', tipAccountTitle: 'Claude Max アカウント', tipSessionsTitle: 'アクティブセッション',
+        tipCompareTitle: '使用量比較', tipEfficiencyTitle: '効率指標',
+        tipProgressTitle: '今日 vs 平均', tipChartTitle: '14日間トレンド',
+        tipModelTitle: 'モデル使用量', tipAllTimeTitle: '累計',
+        activityByHour: '時間帯別アクティビティ', recordsStats: '記録と統計', projectBreakdown: 'プロジェクト内訳', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: '各セルは1日の各時間帯(0-23時)を表します。色が濃いほどその時間帯の使用が多いことを示します。', tipRecords: 'Claude Code使用の各種記録。', tipProjects: 'プロジェクトごとのコスト推定と変更行数。', tipDesktop: 'Claude Desktopアプリのインストール状態を検出。',
+        tipHeatmapTitle: '時間帯別アクティビティ', tipRecordsTitle: '記録と統計', tipProjectsTitle: 'プロジェクト内訳', tipDesktopTitle: 'Claude Desktop',
+      },
+      'ko': {
+        settings: '설정', language: '언어', about: '프로그램 정보',
+        accountTitle: 'Claude Max 계정', sessionsTitle: '활성 세션',
+        usageCompare: '사용량 비교', efficiency: '효율 지표',
+        dailyActivity: '일일 활동 (14일)', modelUsage: '모델 사용량',
+        allTime: '전체 기간', quickLinks: '빠른 링크',
+        todayMessages: '오늘 메시지', todayTokens: '토큰',
+        todaySessions: '세션', todayTools: '도구',
+        thisMonth: '이번 달', today: '오늘', estCost: '예상 비용',
+        avgTokenMsg: '평균 토큰/메시지', cacheHitRate: '캐시 히트율',
+        toolsMsg: '도구/메시지', todayVsAvg: '오늘 vs 과거 평균',
+        totalMessages: '총 메시지', estTotalCost: '예상 총 비용',
+        noSession: 'CLI 세션이 감지되지 않습니다',
+        noAccount: 'Claude 계정이 감지되지 않습니다',
+        plan: '플랜', subDays: '구독 일수', role: '역할',
+        intensityLabel: '오늘 사용 강도 (vs 피크)',
+        low: '낮음', mid: '보통', high: '높음',
+        guestPasses: '게스트 패스 남은 수',
+        billing: '결제', usageDash: '사용량 대시보드',
+        plans: '플랜', apiKeys: 'API 키',
+        tipAccount: 'Claude 구독 정보. 플랜 유형, 구독 일수, 오늘 사용량을 과거 최고치와 비교하는 강도 바를 표시합니다.',
+        tipSessions: '현재 실행 중인 Claude Code CLI 세션. 녹색=활성, 빨간색=종료. 보라색 배경 바는 상대적 output 토큰 사용량을 나타냅니다.',
+        tipCompare: '왼쪽은 오늘, 오른쪽은 이번 달 합계. Messages=대화 수, Tokens=AI 처리 텍스트량, Est. Cost=API 가격 기준 예상 비용 (Max 사용자는 실제 과금 없음).',
+        tipEfficiency: '평균 토큰/메시지: 낮을수록 효율적. 캐시 히트율: 높을수록 비용 효율적. 도구/메시지: 높을수록 복잡한 엔지니어링 작업.',
+        tipProgress: '오늘 사용량을 과거 일평균과 비교. 80%에서 주황색, 150%에서 빨간색 경고.',
+        tipChart: '지난 14일간 사용량 차트. 보라색=토큰, 청록색=메시지.',
+        tipModel: 'AI 모델별 토큰 사용량. 보라색=Input, 주황색=Output, 녹색=Cache.',
+        tipAllTime: 'Claude Code 사용 시작 이후 누적. 예상 총 비용은 API 가격 기준입니다.',
+        tipPlanTitle: '구독 사용량', tipPlan: '현재 세션 사용량, 주간 모델 할당량, 추가 사용 비용을 포함한 Claude 구독 사용 제한을 표시합니다. claude.ai 설정에서 실시간으로 가져옵니다.', tipAccountTitle: 'Claude Max 계정', tipSessionsTitle: '활성 세션',
+        tipCompareTitle: '사용량 비교', tipEfficiencyTitle: '효율 지표',
+        tipProgressTitle: '오늘 vs 평균', tipChartTitle: '14일 트렌드',
+        tipModelTitle: '모델 사용량', tipAllTimeTitle: '전체 기간',
+        activityByHour: '시간대별 활동', recordsStats: '기록 및 통계', projectBreakdown: '프로젝트 내역', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: '각 셀은 하루 중 특정 시간(0-23시)을 나타냅니다. 색이 진할수록 해당 시간에 더 많이 사용했음을 의미합니다.', tipRecords: 'Claude Code 사용 기록.', tipProjects: '프로젝트별 비용 추정 및 코드 변경 행수.', tipDesktop: 'Claude Desktop 앱 설치 상태를 감지합니다.',
+        tipHeatmapTitle: '시간대별 활동', tipRecordsTitle: '기록 및 통계', tipProjectsTitle: '프로젝트 내역', tipDesktopTitle: 'Claude Desktop',
+      },
+      'zh-CN': {
+        settings: '设置', language: '语言', about: '关于程序',
+        accountTitle: 'Claude Max 账号', sessionsTitle: '运行中的 Session',
+        usageCompare: '用量对比', efficiency: '效率指标',
+        dailyActivity: '每日活动 (14天)', modelUsage: '模型用量',
+        allTime: '历史累计', quickLinks: '快速链接',
+        todayMessages: '今日消息', todayTokens: 'Tokens',
+        todaySessions: '会话数', todayTools: '工具数',
+        thisMonth: '本月', today: '今天', estCost: '预估费用',
+        avgTokenMsg: '平均 Tokens / 消息', cacheHitRate: '缓存命中率',
+        toolsMsg: '工具 / 消息', todayVsAvg: '今日 vs 历史平均',
+        totalMessages: '总消息数', estTotalCost: '预估总费用',
+        noSession: '未检测到 CLI session',
+        noAccount: '未检测到 Claude 账号',
+        plan: '方案', subDays: '订阅天数', role: '角色',
+        intensityLabel: '今日使用强度（vs 历史峰值）',
+        low: '低度使用', mid: '中度使用', high: '高度使用',
+        guestPasses: 'Guest Passes 剩余',
+        billing: '账号用量 / Billing', usageDash: 'Usage 仪表盘',
+        plans: '方案 / Plans', apiKeys: 'API Keys',
+        tipAccount: '你的 Claude 订阅账号信息。方案显示当前订阅类型，订阅天数是从开通到现在的天数。使用强度条会把你今天的用量跟历史最高记录做比较。',
+        tipSessions: '当前正在运行的 Claude Code CLI 工作会话。绿色圆点＝活跃中，红色＝已结束。紫色背景长度代表相对 output token 用量。',
+        tipCompare: '左边是「今天」的用量，右边是「本月」的累计。Messages 是消息数，Tokens 是 AI 处理的文字量，Est. Cost 是按 API 定价估算的费用（Max 用户实际不收费）。',
+        tipEfficiency: '平均 Tokens/消息：越低越精简。缓存命中率：越高越省钱。工具/消息：数字高代表复杂工程任务。',
+        tipProgress: '今天的使用量跟历史每日平均做比较。超过 80% 变橙色，超过 150% 变红色。',
+        tipChart: '过去 14 天每天的使用量图表。紫色＝Token，青色＝Message。',
+        tipModel: '每个 AI 模型的 token 用量。紫色＝Input，橙色＝Output，绿色＝Cache。Cache 比例越高越好。',
+        tipAllTime: '从开始使用 Claude Code 到现在的总计。预估总费用按 API 定价计算（Max 用户实际不收费）。',
+        tipPlanTitle: '订阅用量', tipPlan: '显示你的 Claude 订阅配额使用状况，包含当前 Session 用量、每周模型配额、以及额外用量花费。数据从 claude.ai 设置页面实时获取。', tipAccountTitle: 'Claude Max 账号', tipSessionsTitle: '运行中的 Session',
+        tipCompareTitle: '用量对比', tipEfficiencyTitle: '效率指标',
+        tipProgressTitle: '今日 vs 平均', tipChartTitle: '14 天趋势',
+        tipModelTitle: '模型用量分布', tipAllTimeTitle: '历史累计',
+        activityByHour: '每小时活动分布', recordsStats: '记录与统计', projectBreakdown: '项目明细', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: '每个格子代表一天中的某个小时（0-23 点），颜色越深代表你在那个时段越常使用 Claude。', tipRecords: '你使用 Claude Code 的各项记录。', tipProjects: '每个项目的费用估算和代码变更行数。', tipDesktop: '检测是否安装了 Claude Desktop 桌面版。',
+        tipHeatmapTitle: '每小时活动分布', tipRecordsTitle: '记录与统计', tipProjectsTitle: '项目明细', tipDesktopTitle: 'Claude Desktop',
+      },
+      'de': {
+        settings: 'Einstellungen', language: 'Sprache', about: 'Über',
+        accountTitle: 'Claude Max Konto', sessionsTitle: 'Aktive Sitzungen',
+        usageCompare: 'Nutzungsvergleich', efficiency: 'Effizienz',
+        dailyActivity: 'Tägliche Aktivität (14T)', modelUsage: 'Modellnutzung',
+        allTime: 'Gesamt', quickLinks: 'Schnellzugriff',
+        todayMessages: 'Heutige Nachrichten', todayTokens: 'Tokens',
+        todaySessions: 'Sitzungen', todayTools: 'Werkzeuge',
+        thisMonth: 'Dieser Monat', today: 'Heute', estCost: 'Gesch. Kosten',
+        avgTokenMsg: 'Ø Tokens / Nachricht', cacheHitRate: 'Cache-Trefferquote',
+        toolsMsg: 'Werkzeuge / Nachricht', todayVsAvg: 'Heute vs Historischer Durchschnitt',
+        totalMessages: 'Nachrichten gesamt', estTotalCost: 'Gesch. Gesamtkosten',
+        noSession: 'Keine CLI-Sitzungen erkannt',
+        noAccount: 'Kein Claude-Konto erkannt',
+        plan: 'Plan', subDays: 'Abo-Tage', role: 'Rolle',
+        intensityLabel: 'Heutige Intensität (vs Spitze)',
+        low: 'Niedrig', mid: 'Mittel', high: 'Hoch',
+        guestPasses: 'Gastpässe verbleibend',
+        billing: 'Abrechnung', usageDash: 'Nutzungs-Dashboard',
+        plans: 'Pläne', apiKeys: 'API-Schlüssel',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Claude Max Konto', tipSessionsTitle: 'Aktive Sitzungen',
+        tipCompareTitle: 'Nutzungsvergleich', tipEfficiencyTitle: 'Effizienz',
+        tipProgressTitle: 'Heute vs Durchschnitt', tipChartTitle: '14-Tage-Trend',
+        tipModelTitle: 'Modellnutzung', tipAllTimeTitle: 'Gesamt',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'fr': {
+        settings: 'Paramètres', language: 'Langue', about: 'À propos',
+        accountTitle: 'Compte Claude Max', sessionsTitle: 'Sessions actives',
+        usageCompare: 'Comparaison d\'utilisation', efficiency: 'Efficacité',
+        dailyActivity: 'Activité quotidienne (14j)', modelUsage: 'Utilisation des modèles',
+        allTime: 'Historique total', quickLinks: 'Liens rapides',
+        todayMessages: 'Messages aujourd\'hui', todayTokens: 'Tokens',
+        todaySessions: 'Sessions', todayTools: 'Outils',
+        thisMonth: 'Ce mois', today: 'Aujourd\'hui', estCost: 'Coût est.',
+        avgTokenMsg: 'Moy. Tokens / Msg', cacheHitRate: 'Taux de cache',
+        toolsMsg: 'Outils / Msg', todayVsAvg: 'Aujourd\'hui vs Moyenne historique',
+        totalMessages: 'Messages totaux', estTotalCost: 'Coût total est.',
+        noSession: 'Aucune session CLI détectée',
+        noAccount: 'Aucun compte Claude détecté',
+        plan: 'Forfait', subDays: 'Jours d\'abo', role: 'Rôle',
+        intensityLabel: 'Intensité du jour (vs pic)',
+        low: 'Faible', mid: 'Moyen', high: 'Élevé',
+        guestPasses: 'Passes invité restants',
+        billing: 'Facturation', usageDash: 'Tableau de bord',
+        plans: 'Forfaits', apiKeys: 'Clés API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Compte Claude Max', tipSessionsTitle: 'Sessions actives',
+        tipCompareTitle: 'Comparaison d\'utilisation', tipEfficiencyTitle: 'Efficacité',
+        tipProgressTitle: 'Aujourd\'hui vs Moyenne', tipChartTitle: 'Tendance 14 jours',
+        tipModelTitle: 'Utilisation des modèles', tipAllTimeTitle: 'Historique total',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'es': {
+        settings: 'Configuración', language: 'Idioma', about: 'Acerca de',
+        accountTitle: 'Cuenta Claude Max', sessionsTitle: 'Sesiones activas',
+        usageCompare: 'Comparación de uso', efficiency: 'Eficiencia',
+        dailyActivity: 'Actividad diaria (14d)', modelUsage: 'Uso de modelos',
+        allTime: 'Histórico total', quickLinks: 'Enlaces rápidos',
+        todayMessages: 'Mensajes de hoy', todayTokens: 'Tokens',
+        todaySessions: 'Sesiones', todayTools: 'Herramientas',
+        thisMonth: 'Este mes', today: 'Hoy', estCost: 'Costo est.',
+        avgTokenMsg: 'Prom. Tokens / Msg', cacheHitRate: 'Tasa de caché',
+        toolsMsg: 'Herramientas / Msg', todayVsAvg: 'Hoy vs Promedio histórico',
+        totalMessages: 'Mensajes totales', estTotalCost: 'Costo total est.',
+        noSession: 'No se detectaron sesiones CLI',
+        noAccount: 'No se detectó cuenta Claude',
+        plan: 'Plan', subDays: 'Días de sub.', role: 'Rol',
+        intensityLabel: 'Intensidad de hoy (vs pico)',
+        low: 'Bajo', mid: 'Medio', high: 'Alto',
+        guestPasses: 'Pases de invitado restantes',
+        billing: 'Facturación', usageDash: 'Panel de uso',
+        plans: 'Planes', apiKeys: 'Claves API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Cuenta Claude Max', tipSessionsTitle: 'Sesiones activas',
+        tipCompareTitle: 'Comparación de uso', tipEfficiencyTitle: 'Eficiencia',
+        tipProgressTitle: 'Hoy vs Promedio', tipChartTitle: 'Tendencia 14 días',
+        tipModelTitle: 'Uso de modelos', tipAllTimeTitle: 'Histórico total',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'pt': {
+        settings: 'Configurações', language: 'Idioma', about: 'Sobre',
+        accountTitle: 'Conta Claude Max', sessionsTitle: 'Sessões ativas',
+        usageCompare: 'Comparação de uso', efficiency: 'Eficiência',
+        dailyActivity: 'Atividade diária (14d)', modelUsage: 'Uso de modelos',
+        allTime: 'Total histórico', quickLinks: 'Links rápidos',
+        todayMessages: 'Mensagens de hoje', todayTokens: 'Tokens',
+        todaySessions: 'Sessões', todayTools: 'Ferramentas',
+        thisMonth: 'Este mês', today: 'Hoje', estCost: 'Custo est.',
+        avgTokenMsg: 'Méd. Tokens / Msg', cacheHitRate: 'Taxa de cache',
+        toolsMsg: 'Ferramentas / Msg', todayVsAvg: 'Hoje vs Média histórica',
+        totalMessages: 'Mensagens totais', estTotalCost: 'Custo total est.',
+        noSession: 'Nenhuma sessão CLI detectada',
+        noAccount: 'Nenhuma conta Claude detectada',
+        plan: 'Plano', subDays: 'Dias de assin.', role: 'Função',
+        intensityLabel: 'Intensidade de hoje (vs pico)',
+        low: 'Baixo', mid: 'Médio', high: 'Alto',
+        guestPasses: 'Passes de convidado restantes',
+        billing: 'Faturamento', usageDash: 'Painel de uso',
+        plans: 'Planos', apiKeys: 'Chaves API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Conta Claude Max', tipSessionsTitle: 'Sessões ativas',
+        tipCompareTitle: 'Comparação de uso', tipEfficiencyTitle: 'Eficiência',
+        tipProgressTitle: 'Hoje vs Média', tipChartTitle: 'Tendência 14 dias',
+        tipModelTitle: 'Uso de modelos', tipAllTimeTitle: 'Total histórico',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'it': {
+        settings: 'Impostazioni', language: 'Lingua', about: 'Informazioni',
+        accountTitle: 'Account Claude Max', sessionsTitle: 'Sessioni attive',
+        usageCompare: 'Confronto utilizzo', efficiency: 'Efficienza',
+        dailyActivity: 'Attività giornaliera (14g)', modelUsage: 'Utilizzo modelli',
+        allTime: 'Totale storico', quickLinks: 'Link rapidi',
+        todayMessages: 'Messaggi di oggi', todayTokens: 'Token',
+        todaySessions: 'Sessioni', todayTools: 'Strumenti',
+        thisMonth: 'Questo mese', today: 'Oggi', estCost: 'Costo stim.',
+        avgTokenMsg: 'Media Token / Msg', cacheHitRate: 'Tasso di cache',
+        toolsMsg: 'Strumenti / Msg', todayVsAvg: 'Oggi vs Media storica',
+        totalMessages: 'Messaggi totali', estTotalCost: 'Costo totale stim.',
+        noSession: 'Nessuna sessione CLI rilevata',
+        noAccount: 'Nessun account Claude rilevato',
+        plan: 'Piano', subDays: 'Giorni abb.', role: 'Ruolo',
+        intensityLabel: 'Intensità di oggi (vs picco)',
+        low: 'Basso', mid: 'Medio', high: 'Alto',
+        guestPasses: 'Pass ospite rimanenti',
+        billing: 'Fatturazione', usageDash: 'Dashboard utilizzo',
+        plans: 'Piani', apiKeys: 'Chiavi API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Account Claude Max', tipSessionsTitle: 'Sessioni attive',
+        tipCompareTitle: 'Confronto utilizzo', tipEfficiencyTitle: 'Efficienza',
+        tipProgressTitle: 'Oggi vs Media', tipChartTitle: 'Tendenza 14 giorni',
+        tipModelTitle: 'Utilizzo modelli', tipAllTimeTitle: 'Totale storico',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'ru': {
+        settings: 'Настройки', language: 'Язык', about: 'О программе',
+        accountTitle: 'Аккаунт Claude Max', sessionsTitle: 'Активные сессии',
+        usageCompare: 'Сравнение использования', efficiency: 'Эффективность',
+        dailyActivity: 'Ежедневная активность (14д)', modelUsage: 'Использование моделей',
+        allTime: 'За всё время', quickLinks: 'Быстрые ссылки',
+        todayMessages: 'Сообщения за сегодня', todayTokens: 'Токены',
+        todaySessions: 'Сессии', todayTools: 'Инструменты',
+        thisMonth: 'Этот месяц', today: 'Сегодня', estCost: 'Оцен. стоимость',
+        avgTokenMsg: 'Ср. токенов / сообщ.', cacheHitRate: 'Попадание в кэш',
+        toolsMsg: 'Инструменты / сообщ.', todayVsAvg: 'Сегодня vs Историческое среднее',
+        totalMessages: 'Всего сообщений', estTotalCost: 'Оцен. общая стоимость',
+        noSession: 'CLI-сессии не обнаружены',
+        noAccount: 'Аккаунт Claude не обнаружен',
+        plan: 'План', subDays: 'Дней подписки', role: 'Роль',
+        intensityLabel: 'Интенсивность сегодня (vs пик)',
+        low: 'Низкая', mid: 'Средняя', high: 'Высокая',
+        guestPasses: 'Гостевых пропусков осталось',
+        billing: 'Оплата', usageDash: 'Панель использования',
+        plans: 'Планы', apiKeys: 'API-ключи',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Аккаунт Claude Max', tipSessionsTitle: 'Активные сессии',
+        tipCompareTitle: 'Сравнение использования', tipEfficiencyTitle: 'Эффективность',
+        tipProgressTitle: 'Сегодня vs Среднее', tipChartTitle: '14-дневный тренд',
+        tipModelTitle: 'Использование моделей', tipAllTimeTitle: 'За всё время',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'ar': {
+        settings: 'الإعدادات', language: 'اللغة', about: 'حول',
+        accountTitle: 'حساب Claude Max', sessionsTitle: 'الجلسات النشطة',
+        usageCompare: 'مقارنة الاستخدام', efficiency: 'الكفاءة',
+        dailyActivity: 'النشاط اليومي (14ي)', modelUsage: 'استخدام النماذج',
+        allTime: 'الإجمالي التاريخي', quickLinks: 'روابط سريعة',
+        todayMessages: 'رسائل اليوم', todayTokens: 'الرموز',
+        todaySessions: 'الجلسات', todayTools: 'الأدوات',
+        thisMonth: 'هذا الشهر', today: 'اليوم', estCost: 'التكلفة المقدرة',
+        avgTokenMsg: 'متوسط الرموز / رسالة', cacheHitRate: 'معدل إصابة الكاش',
+        toolsMsg: 'أدوات / رسالة', todayVsAvg: 'اليوم مقابل المتوسط التاريخي',
+        totalMessages: 'إجمالي الرسائل', estTotalCost: 'التكلفة الإجمالية المقدرة',
+        noSession: 'لم يتم اكتشاف جلسات CLI',
+        noAccount: 'لم يتم اكتشاف حساب Claude',
+        plan: 'الخطة', subDays: 'أيام الاشتراك', role: 'الدور',
+        intensityLabel: 'شدة اليوم (مقابل الذروة)',
+        low: 'منخفض', mid: 'متوسط', high: 'مرتفع',
+        guestPasses: 'تصاريح الضيوف المتبقية',
+        billing: 'الفواتير', usageDash: 'لوحة الاستخدام',
+        plans: 'الخطط', apiKeys: 'مفاتيح API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'حساب Claude Max', tipSessionsTitle: 'الجلسات النشطة',
+        tipCompareTitle: 'مقارنة الاستخدام', tipEfficiencyTitle: 'الكفاءة',
+        tipProgressTitle: 'اليوم مقابل المتوسط', tipChartTitle: 'اتجاه 14 يوم',
+        tipModelTitle: 'استخدام النماذج', tipAllTimeTitle: 'الإجمالي التاريخي',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'hi': {
+        settings: 'सेटिंग्स', language: 'भाषा', about: 'के बारे में',
+        accountTitle: 'Claude Max खाता', sessionsTitle: 'सक्रिय सत्र',
+        usageCompare: 'उपयोग तुलना', efficiency: 'दक्षता',
+        dailyActivity: 'दैनिक गतिविधि (14दि)', modelUsage: 'मॉडल उपयोग',
+        allTime: 'कुल ऐतिहासिक', quickLinks: 'त्वरित लिंक',
+        todayMessages: 'आज के संदेश', todayTokens: 'टोकन',
+        todaySessions: 'सत्र', todayTools: 'उपकरण',
+        thisMonth: 'इस महीने', today: 'आज', estCost: 'अनुमानित लागत',
+        avgTokenMsg: 'औसत टोकन / संदेश', cacheHitRate: 'कैश हिट दर',
+        toolsMsg: 'उपकरण / संदेश', todayVsAvg: 'आज बनाम ऐतिहासिक औसत',
+        totalMessages: 'कुल संदेश', estTotalCost: 'अनुमानित कुल लागत',
+        noSession: 'कोई CLI सत्र नहीं मिला',
+        noAccount: 'कोई Claude खाता नहीं मिला',
+        plan: 'योजना', subDays: 'सदस्यता दिन', role: 'भूमिका',
+        intensityLabel: 'आज की तीव्रता (बनाम शिखर)',
+        low: 'कम', mid: 'मध्यम', high: 'उच्च',
+        guestPasses: 'शेष अतिथि पास',
+        billing: 'बिलिंग', usageDash: 'उपयोग डैशबोर्ड',
+        plans: 'योजनाएं', apiKeys: 'API कुंजियां',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Claude Max खाता', tipSessionsTitle: 'सक्रिय सत्र',
+        tipCompareTitle: 'उपयोग तुलना', tipEfficiencyTitle: 'दक्षता',
+        tipProgressTitle: 'आज बनाम औसत', tipChartTitle: '14-दिन का रुझान',
+        tipModelTitle: 'मॉडल उपयोग', tipAllTimeTitle: 'कुल ऐतिहासिक',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'th': {
+        settings: 'การตั้งค่า', language: 'ภาษา', about: 'เกี่ยวกับ',
+        accountTitle: 'บัญชี Claude Max', sessionsTitle: 'เซสชันที่ใช้งาน',
+        usageCompare: 'เปรียบเทียบการใช้งาน', efficiency: 'ประสิทธิภาพ',
+        dailyActivity: 'กิจกรรมรายวัน (14ว)', modelUsage: 'การใช้โมเดล',
+        allTime: 'รวมทั้งหมด', quickLinks: 'ลิงก์ด่วน',
+        todayMessages: 'ข้อความวันนี้', todayTokens: 'โทเค็น',
+        todaySessions: 'เซสชัน', todayTools: 'เครื่องมือ',
+        thisMonth: 'เดือนนี้', today: 'วันนี้', estCost: 'ค่าใช้จ่ายโดยประมาณ',
+        avgTokenMsg: 'เฉลี่ยโทเค็น / ข้อความ', cacheHitRate: 'อัตราแคช',
+        toolsMsg: 'เครื่องมือ / ข้อความ', todayVsAvg: 'วันนี้ เทียบกับ ค่าเฉลี่ย',
+        totalMessages: 'ข้อความทั้งหมด', estTotalCost: 'ค่าใช้จ่ายรวมโดยประมาณ',
+        noSession: 'ไม่พบเซสชัน CLI',
+        noAccount: 'ไม่พบบัญชี Claude',
+        plan: 'แผน', subDays: 'วันสมาชิก', role: 'บทบาท',
+        intensityLabel: 'ความเข้มข้นวันนี้ (เทียบกับจุดสูงสุด)',
+        low: 'ต่ำ', mid: 'ปานกลาง', high: 'สูง',
+        guestPasses: 'บัตรผ่านแขกที่เหลือ',
+        billing: 'การเรียกเก็บเงิน', usageDash: 'แดชบอร์ดการใช้งาน',
+        plans: 'แผน', apiKeys: 'คีย์ API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'บัญชี Claude Max', tipSessionsTitle: 'เซสชันที่ใช้งาน',
+        tipCompareTitle: 'เปรียบเทียบการใช้งาน', tipEfficiencyTitle: 'ประสิทธิภาพ',
+        tipProgressTitle: 'วันนี้ เทียบกับ ค่าเฉลี่ย', tipChartTitle: 'แนวโน้ม 14 วัน',
+        tipModelTitle: 'การใช้โมเดล', tipAllTimeTitle: 'รวมทั้งหมด',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'vi': {
+        settings: 'Cài đặt', language: 'Ngôn ngữ', about: 'Giới thiệu',
+        accountTitle: 'Tài khoản Claude Max', sessionsTitle: 'Phiên đang hoạt động',
+        usageCompare: 'So sánh sử dụng', efficiency: 'Hiệu suất',
+        dailyActivity: 'Hoạt động hàng ngày (14n)', modelUsage: 'Sử dụng mô hình',
+        allTime: 'Tổng lịch sử', quickLinks: 'Liên kết nhanh',
+        todayMessages: 'Tin nhắn hôm nay', todayTokens: 'Token',
+        todaySessions: 'Phiên', todayTools: 'Công cụ',
+        thisMonth: 'Tháng này', today: 'Hôm nay', estCost: 'Chi phí ước tính',
+        avgTokenMsg: 'TB Token / Tin nhắn', cacheHitRate: 'Tỷ lệ cache',
+        toolsMsg: 'Công cụ / Tin nhắn', todayVsAvg: 'Hôm nay so với Trung bình',
+        totalMessages: 'Tổng tin nhắn', estTotalCost: 'Tổng chi phí ước tính',
+        noSession: 'Không phát hiện phiên CLI',
+        noAccount: 'Không phát hiện tài khoản Claude',
+        plan: 'Gói', subDays: 'Ngày đăng ký', role: 'Vai trò',
+        intensityLabel: 'Cường độ hôm nay (so với đỉnh)',
+        low: 'Thấp', mid: 'Trung bình', high: 'Cao',
+        guestPasses: 'Thẻ khách còn lại',
+        billing: 'Thanh toán', usageDash: 'Bảng điều khiển',
+        plans: 'Gói dịch vụ', apiKeys: 'Khóa API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Tài khoản Claude Max', tipSessionsTitle: 'Phiên đang hoạt động',
+        tipCompareTitle: 'So sánh sử dụng', tipEfficiencyTitle: 'Hiệu suất',
+        tipProgressTitle: 'Hôm nay so với TB', tipChartTitle: 'Xu hướng 14 ngày',
+        tipModelTitle: 'Sử dụng mô hình', tipAllTimeTitle: 'Tổng lịch sử',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'id': {
+        settings: 'Pengaturan', language: 'Bahasa', about: 'Tentang',
+        accountTitle: 'Akun Claude Max', sessionsTitle: 'Sesi Aktif',
+        usageCompare: 'Perbandingan Penggunaan', efficiency: 'Efisiensi',
+        dailyActivity: 'Aktivitas Harian (14h)', modelUsage: 'Penggunaan Model',
+        allTime: 'Total Historis', quickLinks: 'Tautan Cepat',
+        todayMessages: 'Pesan Hari Ini', todayTokens: 'Token',
+        todaySessions: 'Sesi', todayTools: 'Alat',
+        thisMonth: 'Bulan Ini', today: 'Hari Ini', estCost: 'Biaya Est.',
+        avgTokenMsg: 'Rata-rata Token / Pesan', cacheHitRate: 'Rasio Cache',
+        toolsMsg: 'Alat / Pesan', todayVsAvg: 'Hari Ini vs Rata-rata Historis',
+        totalMessages: 'Total Pesan', estTotalCost: 'Total Biaya Est.',
+        noSession: 'Tidak ada sesi CLI terdeteksi',
+        noAccount: 'Tidak ada akun Claude terdeteksi',
+        plan: 'Paket', subDays: 'Hari Langganan', role: 'Peran',
+        intensityLabel: 'Intensitas hari ini (vs puncak)',
+        low: 'Rendah', mid: 'Sedang', high: 'Tinggi',
+        guestPasses: 'Pass tamu tersisa',
+        billing: 'Tagihan', usageDash: 'Dasbor Penggunaan',
+        plans: 'Paket', apiKeys: 'Kunci API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Akun Claude Max', tipSessionsTitle: 'Sesi Aktif',
+        tipCompareTitle: 'Perbandingan Penggunaan', tipEfficiencyTitle: 'Efisiensi',
+        tipProgressTitle: 'Hari Ini vs Rata-rata', tipChartTitle: 'Tren 14 Hari',
+        tipModelTitle: 'Penggunaan Model', tipAllTimeTitle: 'Total Historis',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'tr': {
+        settings: 'Ayarlar', language: 'Dil', about: 'Hakkında',
+        accountTitle: 'Claude Max Hesabı', sessionsTitle: 'Aktif Oturumlar',
+        usageCompare: 'Kullanım Karşılaştırması', efficiency: 'Verimlilik',
+        dailyActivity: 'Günlük Aktivite (14g)', modelUsage: 'Model Kullanımı',
+        allTime: 'Tüm Zamanlar', quickLinks: 'Hızlı Bağlantılar',
+        todayMessages: 'Bugünkü Mesajlar', todayTokens: 'Token',
+        todaySessions: 'Oturumlar', todayTools: 'Araçlar',
+        thisMonth: 'Bu Ay', today: 'Bugün', estCost: 'Tah. Maliyet',
+        avgTokenMsg: 'Ort. Token / Mesaj', cacheHitRate: 'Önbellek Oranı',
+        toolsMsg: 'Araçlar / Mesaj', todayVsAvg: 'Bugün vs Tarihsel Ortalama',
+        totalMessages: 'Toplam Mesaj', estTotalCost: 'Tah. Toplam Maliyet',
+        noSession: 'CLI oturumu algılanmadı',
+        noAccount: 'Claude hesabı algılanmadı',
+        plan: 'Plan', subDays: 'Abonelik Günü', role: 'Rol',
+        intensityLabel: 'Bugünkü yoğunluk (vs zirve)',
+        low: 'Düşük', mid: 'Orta', high: 'Yüksek',
+        guestPasses: 'Kalan misafir kartları',
+        billing: 'Faturalama', usageDash: 'Kullanım Paneli',
+        plans: 'Planlar', apiKeys: 'API Anahtarları',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Claude Max Hesabı', tipSessionsTitle: 'Aktif Oturumlar',
+        tipCompareTitle: 'Kullanım Karşılaştırması', tipEfficiencyTitle: 'Verimlilik',
+        tipProgressTitle: 'Bugün vs Ortalama', tipChartTitle: '14 Günlük Trend',
+        tipModelTitle: 'Model Kullanımı', tipAllTimeTitle: 'Tüm Zamanlar',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'nl': {
+        settings: 'Instellingen', language: 'Taal', about: 'Over',
+        accountTitle: 'Claude Max Account', sessionsTitle: 'Actieve Sessies',
+        usageCompare: 'Gebruiksvergelijking', efficiency: 'Efficiëntie',
+        dailyActivity: 'Dagelijkse Activiteit (14d)', modelUsage: 'Modelgebruik',
+        allTime: 'Totaal Historisch', quickLinks: 'Snelkoppelingen',
+        todayMessages: 'Berichten vandaag', todayTokens: 'Tokens',
+        todaySessions: 'Sessies', todayTools: 'Gereedschap',
+        thisMonth: 'Deze Maand', today: 'Vandaag', estCost: 'Gesch. Kosten',
+        avgTokenMsg: 'Gem. Tokens / Bericht', cacheHitRate: 'Cache-trefkans',
+        toolsMsg: 'Gereedschap / Bericht', todayVsAvg: 'Vandaag vs Historisch Gemiddelde',
+        totalMessages: 'Totaal Berichten', estTotalCost: 'Gesch. Totale Kosten',
+        noSession: 'Geen CLI-sessies gedetecteerd',
+        noAccount: 'Geen Claude-account gedetecteerd',
+        plan: 'Plan', subDays: 'Abo-dagen', role: 'Rol',
+        intensityLabel: 'Intensiteit vandaag (vs piek)',
+        low: 'Laag', mid: 'Gemiddeld', high: 'Hoog',
+        guestPasses: 'Resterende gastpassen',
+        billing: 'Facturering', usageDash: 'Gebruiksdashboard',
+        plans: 'Plannen', apiKeys: 'API-sleutels',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Claude Max Account', tipSessionsTitle: 'Actieve Sessies',
+        tipCompareTitle: 'Gebruiksvergelijking', tipEfficiencyTitle: 'Efficiëntie',
+        tipProgressTitle: 'Vandaag vs Gemiddelde', tipChartTitle: '14-daagse Trend',
+        tipModelTitle: 'Modelgebruik', tipAllTimeTitle: 'Totaal Historisch',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'sv': {
+        settings: 'Inställningar', language: 'Språk', about: 'Om',
+        accountTitle: 'Claude Max-konto', sessionsTitle: 'Aktiva sessioner',
+        usageCompare: 'Användningsjämförelse', efficiency: 'Effektivitet',
+        dailyActivity: 'Daglig aktivitet (14d)', modelUsage: 'Modellanvändning',
+        allTime: 'Totalt historiskt', quickLinks: 'Snabblänkar',
+        todayMessages: 'Meddelanden idag', todayTokens: 'Tokens',
+        todaySessions: 'Sessioner', todayTools: 'Verktyg',
+        thisMonth: 'Denna månad', today: 'Idag', estCost: 'Uppsk. kostnad',
+        avgTokenMsg: 'Snitt Tokens / Medd.', cacheHitRate: 'Cache-träffkvot',
+        toolsMsg: 'Verktyg / Medd.', todayVsAvg: 'Idag vs Historiskt genomsnitt',
+        totalMessages: 'Totala meddelanden', estTotalCost: 'Uppsk. totalkostnad',
+        noSession: 'Inga CLI-sessioner hittades',
+        noAccount: 'Inget Claude-konto hittades',
+        plan: 'Plan', subDays: 'Prenumerationsdagar', role: 'Roll',
+        intensityLabel: 'Dagens intensitet (vs topp)',
+        low: 'Låg', mid: 'Medel', high: 'Hög',
+        guestPasses: 'Gästpass kvar',
+        billing: 'Fakturering', usageDash: 'Användningspanel',
+        plans: 'Planer', apiKeys: 'API-nycklar',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Claude Max-konto', tipSessionsTitle: 'Aktiva sessioner',
+        tipCompareTitle: 'Användningsjämförelse', tipEfficiencyTitle: 'Effektivitet',
+        tipProgressTitle: 'Idag vs Genomsnitt', tipChartTitle: '14-dagars trend',
+        tipModelTitle: 'Modellanvändning', tipAllTimeTitle: 'Totalt historiskt',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'pl': {
+        settings: 'Ustawienia', language: 'Język', about: 'O programie',
+        accountTitle: 'Konto Claude Max', sessionsTitle: 'Aktywne sesje',
+        usageCompare: 'Porównanie użycia', efficiency: 'Wydajność',
+        dailyActivity: 'Aktywność dzienna (14d)', modelUsage: 'Użycie modeli',
+        allTime: 'Łącznie historyczne', quickLinks: 'Szybkie linki',
+        todayMessages: 'Wiadomości dziś', todayTokens: 'Tokeny',
+        todaySessions: 'Sesje', todayTools: 'Narzędzia',
+        thisMonth: 'Ten miesiąc', today: 'Dziś', estCost: 'Szac. koszt',
+        avgTokenMsg: 'Śr. tokenów / wiad.', cacheHitRate: 'Trafienia cache',
+        toolsMsg: 'Narzędzia / wiad.', todayVsAvg: 'Dziś vs Średnia historyczna',
+        totalMessages: 'Łączne wiadomości', estTotalCost: 'Szac. łączny koszt',
+        noSession: 'Nie wykryto sesji CLI',
+        noAccount: 'Nie wykryto konta Claude',
+        plan: 'Plan', subDays: 'Dni subskrypcji', role: 'Rola',
+        intensityLabel: 'Intensywność dziś (vs szczyt)',
+        low: 'Niski', mid: 'Średni', high: 'Wysoki',
+        guestPasses: 'Pozostałe karty gościa',
+        billing: 'Rozliczenia', usageDash: 'Panel użycia',
+        plans: 'Plany', apiKeys: 'Klucze API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Konto Claude Max', tipSessionsTitle: 'Aktywne sesje',
+        tipCompareTitle: 'Porównanie użycia', tipEfficiencyTitle: 'Wydajność',
+        tipProgressTitle: 'Dziś vs Średnia', tipChartTitle: 'Trend 14-dniowy',
+        tipModelTitle: 'Użycie modeli', tipAllTimeTitle: 'Łącznie historyczne',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'uk': {
+        settings: 'Налаштування', language: 'Мова', about: 'Про програму',
+        accountTitle: 'Обліковий запис Claude Max', sessionsTitle: 'Активні сесії',
+        usageCompare: 'Порівняння використання', efficiency: 'Ефективність',
+        dailyActivity: 'Щоденна активність (14д)', modelUsage: 'Використання моделей',
+        allTime: 'За весь час', quickLinks: 'Швидкі посилання',
+        todayMessages: 'Повідомлення за сьогодні', todayTokens: 'Токени',
+        todaySessions: 'Сесії', todayTools: 'Інструменти',
+        thisMonth: 'Цей місяць', today: 'Сьогодні', estCost: 'Оцін. вартість',
+        avgTokenMsg: 'Сер. токенів / повід.', cacheHitRate: 'Влучання в кеш',
+        toolsMsg: 'Інструменти / повід.', todayVsAvg: 'Сьогодні vs Історичне середнє',
+        totalMessages: 'Усього повідомлень', estTotalCost: 'Оцін. загальна вартість',
+        noSession: 'CLI-сесії не виявлено',
+        noAccount: 'Обліковий запис Claude не виявлено',
+        plan: 'План', subDays: 'Днів підписки', role: 'Роль',
+        intensityLabel: 'Інтенсивність сьогодні (vs пік)',
+        low: 'Низька', mid: 'Середня', high: 'Висока',
+        guestPasses: 'Залишилось гостьових перепусток',
+        billing: 'Оплата', usageDash: 'Панель використання',
+        plans: 'Плани', apiKeys: 'API-ключі',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Обліковий запис Claude Max', tipSessionsTitle: 'Активні сесії',
+        tipCompareTitle: 'Порівняння використання', tipEfficiencyTitle: 'Ефективність',
+        tipProgressTitle: 'Сьогодні vs Середнє', tipChartTitle: '14-денний тренд',
+        tipModelTitle: 'Використання моделей', tipAllTimeTitle: 'За весь час',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+      'ms': {
+        settings: 'Tetapan', language: 'Bahasa', about: 'Tentang',
+        accountTitle: 'Akaun Claude Max', sessionsTitle: 'Sesi Aktif',
+        usageCompare: 'Perbandingan Penggunaan', efficiency: 'Kecekapan',
+        dailyActivity: 'Aktiviti Harian (14h)', modelUsage: 'Penggunaan Model',
+        allTime: 'Jumlah Sejarah', quickLinks: 'Pautan Pantas',
+        todayMessages: 'Mesej Hari Ini', todayTokens: 'Token',
+        todaySessions: 'Sesi', todayTools: 'Alat',
+        thisMonth: 'Bulan Ini', today: 'Hari Ini', estCost: 'Kos Anggar.',
+        avgTokenMsg: 'Purata Token / Mesej', cacheHitRate: 'Kadar Cache',
+        toolsMsg: 'Alat / Mesej', todayVsAvg: 'Hari Ini vs Purata Sejarah',
+        totalMessages: 'Jumlah Mesej', estTotalCost: 'Jumlah Kos Anggar.',
+        noSession: 'Tiada sesi CLI dikesan',
+        noAccount: 'Tiada akaun Claude dikesan',
+        plan: 'Pelan', subDays: 'Hari Langganan', role: 'Peranan',
+        intensityLabel: 'Keamatan hari ini (vs puncak)',
+        low: 'Rendah', mid: 'Sederhana', high: 'Tinggi',
+        guestPasses: 'Pas tetamu berbaki',
+        billing: 'Pengebilan', usageDash: 'Papan Pemuka Penggunaan',
+        plans: 'Pelan', apiKeys: 'Kunci API',
+        tipAccount: 'Your Claude subscription info. Shows plan type, subscription age, and a usage intensity bar comparing today\'s usage to your historical peak.',
+        tipSessions: 'Currently running Claude Code CLI sessions. Green dot = active, red = ended. The purple background bar shows relative output token usage. Right side shows model, output tokens, messages, and uptime.',
+        tipCompare: 'Left column shows today\'s usage, right shows this month\'s total. Messages = conversation count, Tokens = text processed by AI, Est. Cost = estimated API pricing (Max subscribers are not actually charged).',
+        tipEfficiency: 'Avg Tokens/Msg: lower = more concise conversations. Cache Hit Rate: higher = more cost-efficient (100% is ideal). Tools/Msg: higher means complex engineering tasks (file reads, searches, commands).',
+        tipProgress: 'This bar compares today\'s usage to your historical daily average. Orange at 80%, red at 150% — meaning you\'re using much more than usual.',
+        tipChart: '14-day usage chart. Purple = Token volume, Cyan = Message count. Easily spot your busiest days.',
+        tipModel: 'Token usage per AI model. Purple = Input (your content), Orange = Output (AI replies), Green = Cache (reused data, cheaper). Higher cache ratio = better.',
+        tipAllTime: 'Lifetime totals since you started using Claude Code. Est. Total Cost is based on API pricing (Max users aren\'t charged, but it shows how much you\'ve saved).',
+        tipPlanTitle: 'Plan Usage', tipPlan: 'Shows your Claude subscription usage limits including current session, weekly model quotas, and extra usage spending. Data is scraped from claude.ai settings in real time.', tipAccountTitle: 'Akaun Claude Max', tipSessionsTitle: 'Sesi Aktif',
+        tipCompareTitle: 'Perbandingan Penggunaan', tipEfficiencyTitle: 'Kecekapan',
+        tipProgressTitle: 'Hari Ini vs Purata', tipChartTitle: 'Trend 14 Hari',
+        tipModelTitle: 'Penggunaan Model', tipAllTimeTitle: 'Jumlah Sejarah',
+        activityByHour: 'Activity by Hour', recordsStats: 'Records & Stats', projectBreakdown: 'Project Breakdown', claudeDesktop: 'Claude Desktop',
+        tipHeatmap: 'Each cell represents an hour of the day (0-23). Darker color means more Claude sessions started at that hour. Shows your work patterns.',
+        tipRecords: 'Your Claude Code milestones: first session date, total days, startups, longest session duration and message count, and web searches.',
+        tipProjects: 'Recent session cost estimates per project with lines added/removed. Sorted by cost to show which projects consume the most.',
+        tipDesktop: 'Detects whether Claude Desktop app is installed and shows its version.',
+        tipHeatmapTitle: 'Activity by Hour', tipRecordsTitle: 'Records & Stats', tipProjectsTitle: 'Project Breakdown', tipDesktopTitle: 'Claude Desktop',
+      },
+    };
+
+    let currentLang = localStorage.getItem('dashboard-lang') || 'zh-TW';
+
+    function t(key) { return (I18N[currentLang] || I18N['zh-TW'])[key] || (I18N['zh-TW'])[key] || key; }
+
+    function applyLang() {
+      // Section titles
+      const titleMap = {
+        'sec-plan': 'planUsage',
+        'sec-account': 'accountTitle', 'sec-sessions': 'sessionsTitle',
+        'sec-compare': 'usageCompare', 'sec-efficiency': 'efficiency',
+        'sec-chart': 'dailyActivity', 'sec-model': 'modelUsage',
+        'sec-alltime': 'allTime', 'sec-links': 'quickLinks',
+        'sec-heatmap': 'activityByHour', 'sec-records': 'recordsStats',
+        'sec-projects': 'projectBreakdown', 'sec-desktop': 'claudeDesktop',
+        'sec-allprojects': 'allProjectsTitle',
+      };
+      for (const [id, key] of Object.entries(titleMap)) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = t(key);
+      }
+      // Tooltips
+      const tipMap = {
+        'tip-plan': ['tipPlanTitle', 'tipPlan'],
+        'tip-account': ['tipAccountTitle', 'tipAccount'],
+        'tip-sessions': ['tipSessionsTitle', 'tipSessions'],
+        'tip-compare': ['tipCompareTitle', 'tipCompare'],
+        'tip-efficiency': ['tipEfficiencyTitle', 'tipEfficiency'],
+        'tip-progress': ['tipProgressTitle', 'tipProgress'],
+        'tip-chart': ['tipChartTitle', 'tipChart'],
+        'tip-model': ['tipModelTitle', 'tipModel'],
+        'tip-alltime': ['tipAllTimeTitle', 'tipAllTime'],
+        'tip-heatmap': ['tipHeatmapTitle', 'tipHeatmap'],
+        'tip-records': ['tipRecordsTitle', 'tipRecords'],
+        'tip-projects': ['tipProjectsTitle', 'tipProjects'],
+        'tip-desktop': ['tipDesktopTitle', 'tipDesktop'],
+        'tip-allprojects': ['tipAllProjectsTitle', 'tipAllProjects'],
+      };
+      for (const [id, [titleKey, bodyKey]] of Object.entries(tipMap)) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.dataset.tipTitle = t(titleKey);
+          el.dataset.tip = t(bodyKey);
+        }
+      }
+      // Settings panel
+      document.getElementById('settingsTitle').textContent = t('settings');
+      document.getElementById('langSectionTitle').textContent = t('language');
+      document.getElementById('aboutSectionTitle').textContent = t('about');
+      // Quick link buttons
+      const linkBtns = document.querySelectorAll('.console-btn');
+      const linkKeys = ['billing', 'usageDash', 'plans', 'apiKeys'];
+      const linkIcons = ['💳', '📊', '⚡', '🔑'];
+      linkBtns.forEach((btn, i) => {
+        if (linkKeys[i]) {
+          btn.innerHTML = `<span class="icon">${linkIcons[i]}</span> ${t(linkKeys[i])}`;
+        }
+      });
+      // Re-render lang list
+      renderLangList();
+    }
+
+    // Changelog
+    const CHANGELOG = [
+      { ver: '2.3.0', date: '2026-03-22', latest: true, changes: {
+        'zh-TW': ['新增 macOS Widget（Small / Medium 兩種尺寸）', '即時顯示 active sessions、今日用量、費用與效率指標', '新增訂閱用量面板 — 從 claude.ai 即時擷取配額資訊', '修復 14 天圖表與模型用量無法顯示的問題'],
+        'en': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'ja': ['macOS Widget追加（Small / Medium 2サイズ）', 'アクティブセッション、使用量、コスト、効率をリアルタイム表示', 'プラン使用量パネル追加 — claude.aiからリアルタイム取得', '14日チャートとモデル使用量の表示不具合を修正'],
+        'ko': ['macOS Widget 추가 (Small / Medium 2가지 크기)', '활성 세션, 사용량, 비용, 효율성 실시간 표시', '구독 사용량 패널 추가 — claude.ai에서 실시간 데이터', '14일 차트 및 모델 사용량 렌더링 오류 수정'],
+        'zh-CN': ['新增 macOS Widget（Small / Medium 两种尺寸）', '实时显示 active sessions、今日用量、费用与效率指标', '新增订阅用量面板 — 从 claude.ai 实时获取配额信息', '修复 14 天图表与模型用量无法显示的问题'],
+        'de': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'fr': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'es': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'pt': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'it': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'ru': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'ar': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'hi': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'th': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'vi': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'id': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'tr': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'nl': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'sv': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'pl': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'uk': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+        'ms': ['Added macOS Widget (Small / Medium sizes)', 'Real-time display of active sessions, today usage, costs & efficiency', 'Added Plan Usage panel — live quota data from claude.ai', 'Fixed 14-day chart and model usage not rendering'],
+      }},
+      { ver: '2.2.0', date: '2026-03-22', changes: {
+        'zh-TW': ['Quick Links 改為 App 內嵌瀏覽器開啟 Anthropic Console', '登入一次後 session 持久化，不用再另開瀏覽器查用量', 'Tray 動畫改為全部丟美金（不再丟木材）'],
+        'en': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'ja': ['Quick LinksをApp内蔵ブラウザでAnthropicコンソール表示に変更', 'ログイン後セッション永続化 — 外部ブラウザ不要', 'トレイアニメーションを全て紙幣に変更'],
+        'ko': ['Quick Links를 앱 내장 브라우저로 Anthropic Console 표시', '로그인 후 세션 유지 — 외부 브라우저 불필요', '트레이 애니메이션을 모두 지폐로 변경'],
+        'zh-CN': ['Quick Links 改为 App 内嵌浏览器打开 Anthropic Console', '登录一次后 session 持久化，不用再另开浏览器', 'Tray 动画改为全部丢美金'],
+        'de': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'fr': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'es': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'pt': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'it': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'ru': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'ar': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'hi': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'th': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'vi': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'id': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'tr': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'nl': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'sv': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'pl': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'uk': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+        'ms': ['Quick Links now open Anthropic Console in embedded browser window', 'Session persists after first login — no need to open external browser', 'Tray animation changed to all cash stacks (no more logs)'],
+      }},
+      { ver: '2.1.0', date: '2026-03-22', changes: {
+        'zh-TW': ['新增啟動版權宣告畫面（停留 5 秒後淡出）', '設定齒輪圖示加大，更易點擊', '語言選擇改為下拉選單，更簡潔美觀'],
+        'en': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'ja': ['起動時スプラッシュ画面追加（5秒表示後フェードアウト）', '設定ギアアイコン拡大', '言語選択をドロップダウンに変更'],
+        'ko': ['시작 스플래시 화면 추가 (5초 표시 후 페이드 아웃)', '설정 기어 아이콘 확대', '언어 선택을 드롭다운으로 변경'],
+        'zh-CN': ['新增启动版权声明画面（停留 5 秒后淡出）', '设置齿轮图标加大', '语言选择改为下拉选单'],
+        'de': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'fr': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'es': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'pt': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'it': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'ru': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'ar': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'hi': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'th': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'vi': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'id': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'tr': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'nl': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'sv': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'pl': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'uk': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+        'ms': ['Added startup splash screen with copyright (5s display, fade out)', 'Settings gear icon enlarged for easier tap', 'Language switcher changed to dropdown for cleaner UI'],
+      }},
+      { ver: '1.8.0', date: '2026-03-22', changes: {
+        'zh-TW': ['新增解說精靈 — 游標移到任一區塊會浮出白話解釋', '新增設定面板 — 多國語言切換 + 版本變更紀錄'],
+        'en': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'ja': ['ツールチップガイド追加 — セクションにホバーで説明表示', '設定パネル追加 — 言語切替 + 変更履歴'],
+        'ko': ['툴팁 가이드 추가 — 섹션 위에 마우스를 올리면 설명 표시', '설정 패널 추가 — 언어 전환 + 변경 이력'],
+        'zh-CN': ['新增解说精灵 — 鼠标移到任一区块会浮出白话解释', '新增设置面板 — 多国语言切换 + 版本变更记录'],
+        'de': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'fr': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'es': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'pt': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'it': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'ru': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'ar': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'hi': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'th': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'vi': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'id': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'tr': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'nl': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'sv': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'pl': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'uk': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+        'ms': ['Added tooltip guide — hover any section for plain-language explanation', 'Added settings panel — language switcher + changelog'],
+      }},
+      { ver: '1.7.0', date: '2026-03-22', changes: {
+        'zh-TW': ['Session 顯示 model 名稱', 'Usage 改為今日 vs 本月雙欄對比（含費用）', '新增效率指標：Avg Tokens/Msg、Cache Hit Rate、Tools/Msg', '進度條改用歷史平均做基準', '圖表改為 Token + Message 雙色柱狀圖', 'Model Usage 改為彩色水平長條圖（Input/Output/Cache）'],
+        'en': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'ja': ['セッションにモデル名表示', '使用量を今日vs今月の2列比較に刷新（コスト付き）', '効率指標追加', 'チャートをトークン+メッセージの2色バーに', 'モデル使用量をカラー棒グラフに'],
+        'ko': ['세션에 모델 이름 표시', '사용량을 오늘 vs 이번달 2열 비교로 개편', '효율 지표 추가', '차트를 토큰+메시지 이중 색상 바로 업그레이드', '모델 사용량을 컬러 수평 바 차트로'],
+        'zh-CN': ['Session 显示 model 名称', 'Usage 改为今日 vs 本月双栏对比', '新增效率指标', '图表改为双色柱状图', '模型用量改为彩色水平条形图'],
+        'de': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'fr': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'es': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'pt': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'it': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'ru': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'ar': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'hi': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'th': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'vi': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'id': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'tr': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'nl': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'sv': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'pl': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'uk': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+        'ms': ['Sessions now show model name', 'Usage redesigned as Today vs Month dual-column with cost', 'New efficiency metrics: Avg Tokens/Msg, Cache Hit Rate, Tools/Msg', 'Progress bar now uses historical average as baseline', 'Chart upgraded to dual-color Token + Message bars', 'Model Usage redesigned as colored horizontal bar chart (Input/Output/Cache)'],
+      }},
+      { ver: '1.6.0', date: '2026-03-22', changes: {
+        'zh-TW': ['美鈔加大 85%，散開的單張也同步放大', '$ 符號加大 40%'],
+        'en': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'ja': ['紙幣スタック85%拡大', '$記号40%拡大'],
+        'ko': ['지폐 스택 85% 확대', '$ 기호 40% 확대'],
+        'zh-CN': ['美钞加大 85%', '$ 符号加大 40%'],
+        'de': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'fr': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'es': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'pt': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'it': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'ru': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'ar': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'hi': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'th': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'vi': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'id': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'tr': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'nl': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'sv': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'pl': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'uk': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+        'ms': ['Cash stack enlarged 85%, loose bills scaled up', '$ symbol enlarged 40%'],
+      }},
+      { ver: '1.5.0', date: '2026-03-22', changes: {
+        'zh-TW': ['美鈔改為 3D 長方體造型，側面可見厚度紋路', '3 張鈔票被風吹散，各自翻飛旋轉，有透視翻面效果', '中間有米白色紙帶束帶'],
+        'en': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'ja': ['紙幣を3D立体に再設計', '3枚が風で散る透視フリップアニメーション', '銀行帯追加'],
+        'ko': ['지폐를 3D 블록으로 재설계', '3장이 바람에 날리는 투시 플립 애니메이션', '은행 밴드 추가'],
+        'zh-CN': ['美钞改为 3D 长方体造型', '3 张钞票被风吹散，有透视翻面效果', '中间有纸带束带'],
+        'de': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'fr': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'es': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'pt': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'it': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'ru': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'ar': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'hi': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'th': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'vi': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'id': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'tr': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'nl': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'sv': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'pl': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'uk': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+        'ms': ['Cash redesigned as 3D block with visible side thickness', '3 bills peel off in wind with perspective flip animation', 'Bank band wrapper added'],
+      }},
+      { ver: '1.4.0', date: '2026-03-22', changes: {
+        'zh-TW': ['Tray icon 放大為 64px（32pt @2x）', '火焰加入呼吸效果（0.7x ~ 1.3x）', '木柴從左右交替拋入', '新增一疊美鈔 + 多根木柴散開飛入動畫'],
+        'en': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'ja': ['トレイアイコン64pxに拡大', '炎の呼吸エフェクト追加', '薪が左右交互に投入', '紙幣束+複数薪のアニメーション追加'],
+        'ko': ['트레이 아이콘 64px로 확대', '불꽃 호흡 효과 추가', '장작이 좌우 교대로 투입', '지폐 묶음 + 다중 장작 애니메이션 추가'],
+        'zh-CN': ['Tray icon 放大为 64px', '火焰加入呼吸效果', '木材从左右交替抛入', '新增美钞 + 多根木材飞入动画'],
+        'de': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'fr': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'es': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'pt': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'it': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'ru': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'ar': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'hi': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'th': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'vi': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'id': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'tr': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'nl': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'sv': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'pl': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'uk': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+        'ms': ['Tray icon enlarged to 64px (32pt @2x)', 'Flame breathing effect (0.7x – 1.3x)', 'Wood alternates from left and right', 'Added cash stack + multi-log bundle animations'],
+      }},
+      { ver: '1.3.0', date: '2026-03-21', changes: {
+        'zh-TW': ['圖示從貓咪改為營火動畫', 'Menu bar 常駐動畫：24 幀循環（火焰搖曳 + 木柴拋入 + 火星飄散）', '新增 App icon：深色背景營火'],
+        'en': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'ja': ['アイコンを猫からキャンプファイヤーアニメーションに変更', 'メニューバー常時アニメーション', '新アプリアイコン'],
+        'ko': ['아이콘을 고양이에서 캠프파이어 애니메이션으로 변경', '메뉴바 상시 애니메이션', '새 앱 아이콘'],
+        'zh-CN': ['图标从猫咪改为营火动画', 'Menu bar 常驻动画', '新增 App icon'],
+        'de': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'fr': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'es': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'pt': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'it': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'ru': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'ar': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'hi': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'th': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'vi': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'id': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'tr': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'nl': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'sv': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'pl': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'uk': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+        'ms': ['Icon changed from cat to animated campfire', 'Menu bar animation: 24-frame loop (flickering flames + wood toss + sparks)', 'New app icon: campfire on dark background'],
+      }},
+      { ver: '1.2.0', date: '2026-03-21', changes: {
+        'zh-TW': ['Active Sessions 改為橫向長條顯示', '每個 session 獨立卡片，背景漸層顯示相對 token 用量'],
+        'en': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'ja': ['アクティブセッションを横バーに再設計', '各セッションを独立カードに'],
+        'ko': ['활성 세션을 수평 바로 재설계', '각 세션을 독립 카드로'],
+        'zh-CN': ['Active Sessions 改为横向长条显示', '每个 session 独立卡片'],
+        'de': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'fr': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'es': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'pt': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'it': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'ru': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'ar': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'hi': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'th': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'vi': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'id': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'tr': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'nl': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'sv': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'pl': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'uk': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+        'ms': ['Active Sessions redesigned as horizontal bars', 'Each session as standalone card with gradient background showing relative usage'],
+      }},
+      { ver: '1.1.0', date: '2026-03-21', changes: {
+        'zh-TW': ['初始版本：macOS menu bar dashboard', 'Claude Max 帳號資訊、使用強度條', 'Session 監控、Token 用量圖表、費用估算'],
+        'en': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'ja': ['初期リリース：macOSメニューバーダッシュボード', 'Claude Maxアカウント情報、使用強度バー', 'セッション監視、トークンチャート、コスト推定'],
+        'ko': ['초기 릴리스: macOS 메뉴바 대시보드', 'Claude Max 계정 정보, 사용 강도 바', '세션 모니터링, 토큰 차트, 비용 추정'],
+        'zh-CN': ['初始版本：macOS menu bar dashboard', 'Claude Max 账号信息、使用强度条', 'Session 监控、Token 用量图表、费用估算'],
+        'de': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'fr': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'es': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'pt': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'it': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'ru': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'ar': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'hi': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'th': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'vi': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'id': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'tr': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'nl': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'sv': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'pl': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'uk': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+        'ms': ['Initial release: macOS menu bar dashboard', 'Claude Max account info, usage intensity', 'Session monitoring, token charts, cost estimation'],
+      }},
+    ];
+
+    function renderLangList() {
+      const sel = document.getElementById('langSelect');
+      sel.innerHTML = LANGS.map(l =>
+        `<option value="${l.code}" ${l.code === currentLang ? 'selected' : ''}>${l.flag}  ${l.name}</option>`
+      ).join('');
+    }
+
+    function renderChangelog() {
+      const list = document.getElementById('changelogList');
+      list.innerHTML = CHANGELOG.map(item => {
+        const changes = item.changes[currentLang] || item.changes['en'] || [];
+        return `
+          <div class="changelog-item">
+            <div class="changelog-ver">
+              <span class="ver-tag ${item.latest ? 'latest' : ''}">${item.ver}</span>
+              <span class="ver-date">${item.date}</span>
+            </div>
+            <div class="changelog-body">
+              <ul>${changes.map(c => `<li>${c}</li>`).join('')}</ul>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function switchLang(code) {
+      currentLang = code;
+      localStorage.setItem('dashboard-lang', code);
+      applyLang();
+      renderChangelog();
+      refresh();
+    }
+
+    function openSettings() {
+      renderLangList();
+      renderChangelog();
+      document.getElementById('settingsOverlay').classList.add('open');
+    }
+
+    function closeSettings() {
+      document.getElementById('settingsOverlay').classList.remove('open');
+    }
+
+    // ── Tooltip guide system ──
+    const tooltip = document.getElementById('tooltip');
+    let tipTimer = null;
+
+    document.addEventListener('mouseover', (e) => {
+      const trigger = e.target.closest('.tip-trigger');
+      if (!trigger) return;
+      const title = trigger.dataset.tipTitle || '';
+      const text = trigger.dataset.tip || '';
+      if (!text) return;
+
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => {
+        tooltip.innerHTML =
+          (title ? `<div class="tip-title">${title}</div>` : '') + text;
+        tooltip.classList.add('visible');
+        positionTooltip(e);
+      }, 350);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (tooltip.classList.contains('visible')) {
+        positionTooltip(e);
+      }
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      const trigger = e.target.closest('.tip-trigger');
+      if (!trigger) return;
+      const related = e.relatedTarget;
+      if (related && trigger.contains(related)) return;
+      clearTimeout(tipTimer);
+      tooltip.classList.remove('visible');
+    });
+
+    function positionTooltip(e) {
+      const pad = 12;
+      const bw = document.body.clientWidth;
+      const bh = document.body.clientHeight;
+      let x = e.clientX + pad;
+      let y = e.clientY + pad;
+      // Prevent overflow right
+      if (x + 270 > bw) x = e.clientX - 270 - pad;
+      // Prevent overflow bottom
+      if (y + tooltip.offsetHeight + pad > bh) y = e.clientY - tooltip.offsetHeight - pad;
+      if (y < 4) y = 4;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top = y + 'px';
+    }
+
+    // ── Splash screen dismiss after 5 seconds ──
+    setTimeout(() => {
+      const splash = document.getElementById('splashScreen');
+      if (splash) {
+        splash.classList.add('fade-out');
+        setTimeout(() => splash.remove(), 500);
+      }
+    }, 5000);
+
+    // Initial load + auto-refresh
+    applyLang();
+    refresh();
+    setInterval(refresh, 3000);
+
+    // Fetch plan usage on startup (after splash)
+    setTimeout(() => fetchPlanUsage(), 6000);
+    // Auto-refresh plan usage every 5 minutes
+    setInterval(() => fetchPlanUsage(), 300000);
+  </script>
+</body>
+</html>
