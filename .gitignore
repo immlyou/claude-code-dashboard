@@ -1,1 +1,6 @@
 node_modules/
+dist/
+build/*.icns
+.DS_Store
+*.png
+!assets/*.png

@@ -10,6 +10,26 @@ const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 const STATS_FILE = path.join(CLAUDE_DIR, 'stats-cache.json');
 const CLAUDE_JSON = path.join(os.homedir(), '.claude.json');
 
+const MODEL_PRICING = {
+  // per million tokens [input, output, cache_read, cache_write]
+  'opus':   [15, 75, 1.5, 18.75],
+  'sonnet': [3, 15, 0.3, 3.75],
+  'haiku':  [0.25, 1.25, 0.025, 0.3125],
+};
+
+function getModelPricing(modelName) {
+  const name = modelName.toLowerCase();
+  if (name.includes('opus')) return MODEL_PRICING.opus;
+  if (name.includes('haiku')) return MODEL_PRICING.haiku;
+  return MODEL_PRICING.sonnet; // default to sonnet
+}
+
+// Cache for scanAllProjects
+let projectsCache = null;
+let projectsCacheTime = 0;
+const fileStatsCache = new Map();
+const PROJECTS_CACHE_TTL = 30000; // 30 seconds
+
 function readJSON(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
   catch { return null; }
@@ -63,7 +83,47 @@ function getSessionTokens(sessionId, cwd) {
  * Scan ~/.claude/projects/ to build a full list of all Claude projects on this machine.
  * For each project: count sessions, sum tokens, find last activity date.
  */
+function scanFileForStats(filePath) {
+  let totalInput = 0, totalOutput = 0, totalCacheRead = 0;
+  let messageCount = 0, toolCallCount = 0;
+  let lastActivity = null;
+  const models = new Set();
+
+  // Full scan — results are cached by mtime in scanAllProjects, so this only runs once per file change
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  const lines = content.split('\n').filter(Boolean);
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === 'user') messageCount++;
+      if (entry.type === 'assistant' && entry.message?.usage) {
+        const u = entry.message.usage;
+        totalInput += u.input_tokens || 0;
+        totalOutput += u.output_tokens || 0;
+        totalCacheRead += u.cache_read_input_tokens || 0;
+        if (entry.message?.model) models.add(entry.message.model);
+      }
+      if (entry.message?.content && Array.isArray(entry.message.content)) {
+        for (const block of entry.message.content) {
+          if (block.type === 'tool_use') toolCallCount++;
+        }
+      }
+      if (entry.timestamp && (!lastActivity || entry.timestamp > lastActivity)) {
+        lastActivity = entry.timestamp;
+      }
+    } catch { /* skip bad line */ }
+  }
+
+  return { totalInput, totalOutput, totalCacheRead, messageCount, toolCallCount, lastActivity, models: [...models], bytesScanned: content.length };
+}
+
 function scanAllProjects() {
+  const now = Date.now();
+  if (projectsCache && (now - projectsCacheTime) < PROJECTS_CACHE_TTL) {
+    return projectsCache;
+  }
+
   const projects = [];
   try {
     const dirs = fs.readdirSync(PROJECTS_DIR);
@@ -87,48 +147,28 @@ function scanAllProjects() {
           if (!f.endsWith('.jsonl')) continue;
           sessionCount++;
 
-          // Read only last 200 lines for speed (tail of file)
           try {
             const filePath = path.join(dirPath, f);
             const stat = fs.statSync(filePath);
-            const fileSize = stat.size;
+            const mtimeMs = stat.mtimeMs;
+            const cached = fileStatsCache.get(filePath);
 
-            // For large files, only read last 64KB
-            let content;
-            if (fileSize > 65536) {
-              const buf = Buffer.alloc(65536);
-              const fd = fs.openSync(filePath, 'r');
-              fs.readSync(fd, buf, 0, 65536, fileSize - 65536);
-              fs.closeSync(fd);
-              content = buf.toString('utf-8');
-              // Skip first partial line
-              const firstNewline = content.indexOf('\n');
-              if (firstNewline >= 0) content = content.slice(firstNewline + 1);
+            let fileStats;
+            if (cached && cached.mtimeMs === mtimeMs) {
+              fileStats = cached.stats;
             } else {
-              content = fs.readFileSync(filePath, 'utf-8');
+              fileStats = scanFileForStats(filePath);
+              fileStatsCache.set(filePath, { mtimeMs, bytesScanned: fileStats.bytesScanned, stats: fileStats });
             }
 
-            const lines = content.split('\n').filter(Boolean);
-            for (const line of lines) {
-              try {
-                const entry = JSON.parse(line);
-                if (entry.type === 'user') messageCount++;
-                if (entry.type === 'assistant' && entry.message?.usage) {
-                  const u = entry.message.usage;
-                  totalInput += u.input_tokens || 0;
-                  totalOutput += u.output_tokens || 0;
-                  totalCacheRead += u.cache_read_input_tokens || 0;
-                  if (entry.message?.model) models.add(entry.message.model);
-                }
-                if (entry.message?.content && Array.isArray(entry.message.content)) {
-                  for (const block of entry.message.content) {
-                    if (block.type === 'tool_use') toolCallCount++;
-                  }
-                }
-                if (entry.timestamp && (!lastActivity || entry.timestamp > lastActivity)) {
-                  lastActivity = entry.timestamp;
-                }
-              } catch { /* skip bad line */ }
+            totalInput += fileStats.totalInput;
+            totalOutput += fileStats.totalOutput;
+            totalCacheRead += fileStats.totalCacheRead;
+            messageCount += fileStats.messageCount;
+            toolCallCount += fileStats.toolCallCount;
+            for (const m of fileStats.models) models.add(m);
+            if (fileStats.lastActivity && (!lastActivity || fileStats.lastActivity > lastActivity)) {
+              lastActivity = fileStats.lastActivity;
             }
           } catch { /* skip unreadable file */ }
         }
@@ -160,10 +200,14 @@ function scanAllProjects() {
     return b.lastActivity.localeCompare(a.lastActivity);
   });
 
+  projectsCache = projects;
+  projectsCacheTime = now;
   return projects;
 }
 
 function collect() {
+  const errors = [];
+
   // Active sessions
   const sessions = [];
   try {
@@ -186,14 +230,43 @@ function collect() {
         ...tokens,
       });
     }
-  } catch { /* */ }
-  sessions.sort((a, b) => {
+  } catch(e) { errors.push({ source: 'sessionReading', message: e.message }); }
+
+  // Dead session cleanup: remove stale session files older than 24 hours
+  let cleanedUp = 0;
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  for (const s of sessions) {
+    if (!s.alive) {
+      try {
+        const sessionFilePath = path.join(SESSIONS_DIR, `${s.pid}.json`);
+        const stat = fs.statSync(sessionFilePath);
+        if (Date.now() - stat.mtimeMs > TWENTY_FOUR_HOURS) {
+          fs.unlinkSync(sessionFilePath);
+          cleanedUp++;
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  // Remove cleaned-up sessions from the list
+  const activeSessions = cleanedUp > 0
+    ? sessions.filter(s => {
+        if (!s.alive) {
+          try { fs.statSync(path.join(SESSIONS_DIR, `${s.pid}.json`)); return true; }
+          catch { return false; }
+        }
+        return true;
+      })
+    : sessions;
+
+  activeSessions.sort((a, b) => {
     if (a.alive !== b.alive) return a.alive ? -1 : 1;
     return b.startedAt - a.startedAt;
   });
 
   // Stats
-  const stats = readJSON(STATS_FILE) || {};
+  let stats = {};
+  try { stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8')); }
+  catch(e) { errors.push({ source: 'statsReading', message: e.message }); }
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -212,14 +285,20 @@ function collect() {
     .filter(d => d.date.startsWith(monthStart))
     .reduce((sum, d) => sum + d.messageCount, 0);
 
-  // Cost estimate
+  // Cost estimate (per-model pricing)
   const totalOutput = Object.values(stats.modelUsage || {}).reduce((s, m) => s + (m.outputTokens || 0), 0);
   const totalInput = Object.values(stats.modelUsage || {}).reduce((s, m) => s + (m.inputTokens || 0), 0);
   const totalCacheRead = Object.values(stats.modelUsage || {}).reduce((s, m) => s + (m.cacheReadInputTokens || 0), 0);
   const totalCacheCreation = Object.values(stats.modelUsage || {}).reduce((s, m) => s + (m.cacheCreationInputTokens || 0), 0);
-  const costEstimate =
-    (totalInput / 1e6) * 15 + (totalOutput / 1e6) * 75 +
-    (totalCacheRead / 1e6) * 1.5 + (totalCacheCreation / 1e6) * 18.75;
+  let costEstimate = 0;
+  for (const [modelName, m] of Object.entries(stats.modelUsage || {})) {
+    const [pIn, pOut, pCR, pCW] = getModelPricing(modelName);
+    costEstimate +=
+      ((m.inputTokens || 0) / 1e6) * pIn +
+      ((m.outputTokens || 0) / 1e6) * pOut +
+      ((m.cacheReadInputTokens || 0) / 1e6) * pCR +
+      ((m.cacheCreationInputTokens || 0) / 1e6) * pCW;
+  }
 
   // Daily history (last 14 days)
   const dailyHistory = (stats.dailyActivity || []).slice(-14).map(d => ({
@@ -270,32 +349,33 @@ function collect() {
     peakDailyTokens,
   };
 
-  // Today cost estimate
-  let todayInput = 0, todayOutput = 0, todayCacheRead = 0, todayCacheCreation = 0;
+  // Today cost estimate (per-model with assumed token type split)
+  // Use fixed ratios: 30% input, 50% output, 15% cache_read, 5% cache_write
+  const RATIO_IN = 0.30, RATIO_OUT = 0.50, RATIO_CR = 0.15, RATIO_CW = 0.05;
+  let todayCost = 0;
   if (todayTokenEntry?.tokensByModel) {
-    // Approximate split using aggregate ratios
-    const ratioIn = totalInput / Math.max(1, totalInput + totalOutput);
-    const ratioOut = totalOutput / Math.max(1, totalInput + totalOutput);
-    const ratioCR = totalCacheRead / Math.max(1, totalInput + totalOutput);
-    const ratioCW = totalCacheCreation / Math.max(1, totalInput + totalOutput);
-    const todayTotal = Object.values(todayTokenEntry.tokensByModel).reduce((a, b) => a + b, 0);
-    todayInput = todayTotal * ratioIn;
-    todayOutput = todayTotal * ratioOut;
-    todayCacheRead = todayTotal * ratioCR;
-    todayCacheCreation = todayTotal * ratioCW;
+    for (const [modelName, tokens] of Object.entries(todayTokenEntry.tokensByModel)) {
+      const [pIn, pOut, pCR, pCW] = getModelPricing(modelName);
+      todayCost +=
+        (tokens * RATIO_IN / 1e6) * pIn +
+        (tokens * RATIO_OUT / 1e6) * pOut +
+        (tokens * RATIO_CR / 1e6) * pCR +
+        (tokens * RATIO_CW / 1e6) * pCW;
+    }
   }
-  const todayCost =
-    (todayInput / 1e6) * 15 + (todayOutput / 1e6) * 75 +
-    (todayCacheRead / 1e6) * 1.5 + (todayCacheCreation / 1e6) * 18.75;
 
-  // Month cost estimate
-  const monthInput = thisMonthTokens * (totalInput / Math.max(1, totalInput + totalOutput));
-  const monthOutput = thisMonthTokens * (totalOutput / Math.max(1, totalInput + totalOutput));
-  const monthCR = thisMonthTokens * (totalCacheRead / Math.max(1, totalInput + totalOutput));
-  const monthCW = thisMonthTokens * (totalCacheCreation / Math.max(1, totalInput + totalOutput));
-  const monthCost =
-    (monthInput / 1e6) * 15 + (monthOutput / 1e6) * 75 +
-    (monthCR / 1e6) * 1.5 + (monthCW / 1e6) * 18.75;
+  // Month cost estimate (per-model with assumed token type split)
+  let monthCost = 0;
+  for (const d of (stats.dailyModelTokens || []).filter(d => d.date.startsWith(monthStart))) {
+    for (const [modelName, tokens] of Object.entries(d.tokensByModel || {})) {
+      const [pIn, pOut, pCR, pCW] = getModelPricing(modelName);
+      monthCost +=
+        (tokens * RATIO_IN / 1e6) * pIn +
+        (tokens * RATIO_OUT / 1e6) * pOut +
+        (tokens * RATIO_CR / 1e6) * pCR +
+        (tokens * RATIO_CW / 1e6) * pCW;
+    }
+  }
 
   // Efficiency metrics
   const totalMsgs = stats.totalMessages || 1;
@@ -312,8 +392,51 @@ function collect() {
     messages: d.messageCount || 0,
   }));
 
+  // Month sessions and tools
+  const thisMonthSessions = (stats.dailyActivity || [])
+    .filter(d => d.date.startsWith(monthStart))
+    .reduce((sum, d) => sum + (d.sessionCount || 0), 0);
+  const thisMonthTools = (stats.dailyActivity || [])
+    .filter(d => d.date.startsWith(monthStart))
+    .reduce((sum, d) => sum + (d.toolCallCount || 0), 0);
+
   // Hour of day activity distribution
-  const hourCounts = stats.hourCounts || new Array(24).fill(0);
+  // stats.hourCounts may be an object { "0": n, "1": n, ... } or an array
+  let hourCounts;
+  if (Array.isArray(stats.hourCounts)) {
+    hourCounts = stats.hourCounts;
+  } else if (stats.hourCounts && typeof stats.hourCounts === 'object') {
+    hourCounts = new Array(24).fill(0);
+    for (const [h, count] of Object.entries(stats.hourCounts)) {
+      hourCounts[parseInt(h, 10)] = count;
+    }
+  } else {
+    hourCounts = new Array(24).fill(0);
+  }
+
+  // Weekday x Hour heatmap (7 days x 24 hours)
+  // weekdayHourCounts[dayOfWeek][hour] where 0=Sunday, 6=Saturday
+  const weekdayHourCounts = Array.from({ length: 7 }, () => new Array(24).fill(0));
+  if (stats.weekdayHourCounts) {
+    // Use stored data if available
+    for (let d = 0; d < 7; d++) {
+      for (let h = 0; h < 24; h++) {
+        weekdayHourCounts[d][h] = (stats.weekdayHourCounts[d] && stats.weekdayHourCounts[d][h]) || 0;
+      }
+    }
+  } else {
+    // Derive from dailyActivity: for each day entry, figure out the day-of-week
+    // and distribute its message count across hours proportional to hourCounts
+    const totalHourActivity = hourCounts.reduce((a, b) => a + b, 0) || 1;
+    for (const d of (stats.dailyActivity || [])) {
+      const dayDate = new Date(d.date + 'T12:00:00');
+      const dow = dayDate.getDay(); // 0=Sunday
+      const msgs = d.messageCount || 0;
+      for (let h = 0; h < 24; h++) {
+        weekdayHourCounts[dow][h] += Math.round(msgs * (hourCounts[h] / totalHourActivity));
+      }
+    }
+  }
 
   // Longest session record
   const longestSession = stats.longestSession || null;
@@ -346,7 +469,10 @@ function collect() {
   projectStats.sort((a, b) => b.cost - a.cost);
 
   // All projects scan
-  const allProjects = scanAllProjects();
+  let allProjects = [];
+  try {
+    allProjects = scanAllProjects();
+  } catch(e) { errors.push({ source: 'scanAllProjects', message: e.message }); }
 
   // Claude Desktop info
   let desktopInfo = null;
@@ -360,16 +486,17 @@ function collect() {
         const sysInfo = fs.readFileSync(sysInfoPath, 'utf-8');
         const verMatch = sysInfo.match(/App Version:\s*(.+)/);
         if (verMatch) appVersion = verMatch[1].trim();
-      } catch {}
+      } catch(e) { errors.push({ source: 'desktopVersion', message: e.message }); }
       desktopInfo = {
         installed: true,
         version: appVersion,
       };
     }
-  } catch {}
+  } catch(e) { errors.push({ source: 'desktopInfo', message: e.message }); }
 
   return {
-    sessions,
+    sessions: activeSessions,
+    cleanedUp,
     today: {
       messages: todayActivity.messageCount || 0,
       tokens: todayTokens,
@@ -380,6 +507,8 @@ function collect() {
     month: {
       tokens: thisMonthTokens,
       messages: thisMonthMessages,
+      sessions: thisMonthSessions,
+      tools: thisMonthTools,
       cost: monthCost,
     },
     aggregate: {
@@ -399,6 +528,7 @@ function collect() {
     dailyTokenHistory,
     dailyMsgHistory,
     hourCounts,
+    weekdayHourCounts,
     longestSession,
     firstSessionDate,
     numStartups,
@@ -406,6 +536,7 @@ function collect() {
     projectStats,
     desktopInfo,
     allProjects,
+    errors,
     timestamp: Date.now(),
   };
 }

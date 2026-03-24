@@ -1,7 +1,31 @@
-const { app, nativeImage, ipcMain, nativeTheme, Menu, BrowserWindow, session } = require('electron');
+const { app, nativeImage, ipcMain, nativeTheme, Menu, BrowserWindow, session, Notification } = require('electron');
 const { menubar } = require('menubar');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { buildPNG, drawCampfire, TOTAL_FRAMES } = require('./icon-draw');
+
+// ─── Settings persistence ──────────────────────────────────────────
+const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'dashboard-settings.json');
+const DEFAULT_REFRESH_INTERVAL = 3000;
+
+function loadSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    const dir = path.dirname(SETTINGS_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Failed to save settings:', e.message);
+  }
+}
 
 /**
  * Pre-render all animation frames for the tray campfire icon.
@@ -53,8 +77,9 @@ if (!gotLock) {
         height: 680,
         resizable: false,
         webPreferences: {
-          nodeIntegration: true,
-          contextIsolation: false,
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: path.join(__dirname, 'preload.js'),
         },
         skipTaskbar: true,
         vibrancy: 'under-window',
@@ -102,35 +127,65 @@ if (!gotLock) {
       nativeTheme.on('updated', sendTheme);
     });
 
+    // ── Notification System ──
+    let lastNotifications = {};
+
+    function notify(id, title, body) {
+      // Debounce: don't send same notification within 30 minutes
+      const now = Date.now();
+      if (lastNotifications[id] && (now - lastNotifications[id]) < 1800000) return;
+      lastNotifications[id] = now;
+
+      const notif = new Notification({ title, body, silent: false });
+      notif.show();
+    }
+
+    ipcMain.handle('check-notifications', async (_, data) => {
+      // 1. Plan usage > 80%
+      if (data.planUsage) {
+        for (const limit of (data.planUsage.limits || [])) {
+          if (limit.pct >= 80) {
+            notify(`plan-${limit.label}`, 'Claude Usage Alert', `${limit.label} is at ${limit.pct}% usage`);
+          }
+        }
+      }
+
+      // 2. Today cost > 2x historical average
+      if (data.todayCost > 0 && data.avgDailyCost > 0 && data.todayCost > data.avgDailyCost * 2) {
+        notify('high-cost', 'High Usage Today', `Today's estimated cost ($${data.todayCost.toFixed(2)}) is over 2x your daily average`);
+      }
+
+      // 3. Session crashed (dead session that was recently alive)
+      if (data.deadSessions && data.deadSessions.length > 0) {
+        for (const s of data.deadSessions) {
+          notify(`dead-${s.pid}`, 'Session Ended', `Claude session in ${s.project} has ended`);
+        }
+      }
+
+      return { ok: true };
+    });
+
+    ipcMain.handle('get-app-version', () => {
+      return app.getVersion();  // reads from package.json automatically
+    });
+
     ipcMain.handle('get-dashboard-data', async () => {
       const collector = require('./collector');
-      const data = collector.collect();
+      return collector.collect();
+    });
 
-      // Write widget data for macOS WidgetKit
-      try {
-        const fs = require('fs');
-        const os = require('os');
-        const widgetData = {
-          activeSessions: data.sessions.filter(s => s.alive).length,
-          todayMessages: data.today.messages,
-          todayTokens: data.today.tokens,
-          todayCost: data.today.cost,
-          monthCost: data.month.cost,
-          totalCost: data.aggregate.costEstimate,
-          plan: data.account.billingType || '',
-          userName: data.account.name || '',
-          cacheHitRate: data.efficiency.cacheHitRate,
-          avgTokensPerMsg: data.efficiency.avgTokensPerMsg,
-          timestamp: Date.now(),
-        };
-        fs.writeFileSync(
-          path.join(os.homedir(), '.claude', 'widget-data.json'),
-          JSON.stringify(widgetData, null, 2),
-          'utf-8'
-        );
-      } catch (_) {}
+    // ── Configurable Refresh Interval ──
+    ipcMain.handle('set-refresh-interval', async (_, interval) => {
+      const ms = Math.max(1000, Math.min(60000, Number(interval) || DEFAULT_REFRESH_INTERVAL));
+      const settings = loadSettings();
+      settings.refreshInterval = ms;
+      saveSettings(settings);
+      return { ok: true, interval: ms };
+    });
 
-      return data;
+    ipcMain.handle('get-refresh-interval', async () => {
+      const settings = loadSettings();
+      return settings.refreshInterval || DEFAULT_REFRESH_INTERVAL;
     });
 
     // ── Plan Usage Scraper ──
@@ -163,7 +218,58 @@ if (!gotLock) {
           },
         });
 
-        async function tryScrape() {
+        const scrapeJS = `
+          (function() {
+            const allText = document.body.innerText;
+            const result = { limits: [], extraUsage: null, url: location.href };
+            const lines = allText.split(/\\n/).map(l => l.trim()).filter(Boolean);
+            let currentLabel = '';
+            let currentReset = '';
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+
+              if (/current session/i.test(line)) currentLabel = 'Current Session';
+              else if (/all model/i.test(line)) currentLabel = 'All Models (Weekly)';
+              else if (/sonnet/i.test(line) && !currentLabel) currentLabel = 'Sonnet (Weekly)';
+              else if (/opus/i.test(line) && !currentLabel) currentLabel = 'Opus (Weekly)';
+              else if (/extra usage/i.test(line)) currentLabel = 'Extra Usage';
+
+              const resetMatch = line.match(/Resets?\\s+(.+)/i);
+              if (resetMatch) currentReset = resetMatch[0];
+
+              const pctMatch = line.match(/(\\d+)%\\s*used/i);
+              if (pctMatch && currentLabel) {
+                result.limits.push({
+                  label: currentLabel,
+                  pct: parseInt(pctMatch[1]),
+                  reset: currentReset,
+                });
+                currentLabel = '';
+                currentReset = '';
+              }
+
+              const dollarMatch = line.match(/\\$(\\d+\\.\\d{2})\\s*spent/i);
+              if (dollarMatch) {
+                result.extraUsage = result.extraUsage || {};
+                result.extraUsage.spent = parseFloat(dollarMatch[1]);
+                result.extraUsage.reset = currentReset;
+              }
+
+              if (/monthly spend limit/i.test(line)) {
+                const nearby = lines.slice(Math.max(0, i-3), i+3).join(' ');
+                const valM = nearby.match(/\\$(\\d+(?:\\.\\d{2})?)/);
+                if (valM && result.extraUsage) {
+                  result.extraUsage.limit = parseFloat(valM[1]);
+                }
+              }
+            }
+
+            return result;
+          })();
+        `;
+
+        async function tryScrape(retriesLeft) {
           if (scrapeResolved || !scraperWin || scraperWin.isDestroyed()) return;
           try {
             const url = scraperWin.webContents.getURL();
@@ -171,71 +277,40 @@ if (!gotLock) {
               return done({ error: 'not_logged_in' });
             }
 
-            const data = await scraperWin.webContents.executeJavaScript(`
-              (function() {
-                const allText = document.body.innerText;
-                const result = { limits: [], extraUsage: null, url: location.href };
-                const lines = allText.split(/\\n/).map(l => l.trim()).filter(Boolean);
-                let currentLabel = '';
-                let currentReset = '';
+            const data = await scraperWin.webContents.executeJavaScript(scrapeJS);
 
-                for (let i = 0; i < lines.length; i++) {
-                  const line = lines[i];
+            // Retry if no data was found and retries remain
+            if ((!data.limits || data.limits.length === 0) && !data.extraUsage && retriesLeft > 0) {
+              setTimeout(() => tryScrape(retriesLeft - 1), 2000);
+              return;
+            }
 
-                  if (/current session/i.test(line)) currentLabel = 'Current Session';
-                  else if (/all model/i.test(line)) currentLabel = 'All Models (Weekly)';
-                  else if (/sonnet/i.test(line) && !currentLabel) currentLabel = 'Sonnet (Weekly)';
-                  else if (/opus/i.test(line) && !currentLabel) currentLabel = 'Opus (Weekly)';
-                  else if (/extra usage/i.test(line)) currentLabel = 'Extra Usage';
-
-                  const resetMatch = line.match(/Resets?\\s+(.+)/i);
-                  if (resetMatch) currentReset = resetMatch[0];
-
-                  const pctMatch = line.match(/(\\d+)%\\s*used/i);
-                  if (pctMatch && currentLabel) {
-                    result.limits.push({
-                      label: currentLabel,
-                      pct: parseInt(pctMatch[1]),
-                      reset: currentReset,
-                    });
-                    currentLabel = '';
-                    currentReset = '';
-                  }
-
-                  const dollarMatch = line.match(/\\$(\\d+\\.\\d{2})\\s*spent/i);
-                  if (dollarMatch) {
-                    result.extraUsage = result.extraUsage || {};
-                    result.extraUsage.spent = parseFloat(dollarMatch[1]);
-                    result.extraUsage.reset = currentReset;
-                  }
-
-                  if (/monthly spend limit/i.test(line)) {
-                    const nearby = lines.slice(Math.max(0, i-3), i+3).join(' ');
-                    const valM = nearby.match(/\\$(\\d+(?:\\.\\d{2})?)/);
-                    if (valM && result.extraUsage) {
-                      result.extraUsage.limit = parseFloat(valM[1]);
-                    }
-                  }
-                }
-
-                return result;
-              })();
-            `);
             done(data);
           } catch (e) {
-            done({ error: e.message });
+            if (retriesLeft > 0) {
+              setTimeout(() => tryScrape(retriesLeft - 1), 2000);
+            } else {
+              done({ error: e.message });
+            }
           }
         }
+
+        // Detect load failures early
+        scraperWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+          done({ error: `Load failed (${errorCode}): ${errorDescription}`, url: validatedURL });
+        });
 
         // Only scrape once after first load completes
         let scraped = false;
         scraperWin.webContents.on('did-finish-load', () => {
           if (scraped) return;
           scraped = true;
-          setTimeout(() => tryScrape(), 8000);
+          setTimeout(() => tryScrape(2), 4000);
         });
 
-        scraperWin.loadURL('https://claude.ai/settings/usage');
+        scraperWin.loadURL('https://claude.ai/settings/usage').catch((err) => {
+          done({ error: `Navigation error: ${err.message}` });
+        });
         scraperWin.on('closed', () => { scraperWin = null; });
       });
     });

@@ -1,6 +1,6 @@
 {
   "name": "claude-code-dashboard",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "main": "main.js",
   "author": "imchris",
   "license": "ISC",
@@ -32,6 +32,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "collector.js",
       "icon-draw.js",
       "ui/**/*",

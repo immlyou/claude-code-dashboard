@@ -3,31 +3,12 @@
 
 const blessed = require('blessed');
 const contrib = require('blessed-contrib');
-const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { execSync } = require('child_process');
+const { collect } = require('./collector');
 
-const CLAUDE_DIR = path.join(os.homedir(), '.claude');
-const SESSIONS_DIR = path.join(CLAUDE_DIR, 'sessions');
-const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
-const STATS_FILE = path.join(CLAUDE_DIR, 'stats-cache.json');
 const REFRESH_INTERVAL = 3000; // 3 seconds
 
-// ─── Utility Functions ───────────────────────────────────────────────
-
-function readJSON(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch { return null; }
-}
-
-function isPidRunning(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch { return false; }
-}
+// ─── Display Helpers ────────────────────────────────────────────────
 
 function formatTokens(n) {
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
@@ -46,165 +27,6 @@ function formatDuration(ms) {
 
 function getProjectName(cwd) {
   return path.basename(cwd) || cwd;
-}
-
-function getProjectDirName(cwd) {
-  return cwd.replace(/\//g, '-');
-}
-
-// ─── Session Token Parsing ───────────────────────────────────────────
-
-function getSessionTokens(sessionId, cwd) {
-  const projectDir = path.join(PROJECTS_DIR, getProjectDirName(cwd));
-  const sessionFile = path.join(projectDir, `${sessionId}.jsonl`);
-
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheRead = 0;
-  let cacheCreation = 0;
-  let messageCount = 0;
-  let toolCallCount = 0;
-  let lastActivity = null;
-  let model = 'unknown';
-
-  try {
-    const data = fs.readFileSync(sessionFile, 'utf-8');
-    const lines = data.split('\n').filter(Boolean);
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === 'user') {
-          messageCount++;
-        }
-        if (entry.type === 'assistant' && entry.message?.usage) {
-          const u = entry.message.usage;
-          inputTokens += u.input_tokens || 0;
-          outputTokens += u.output_tokens || 0;
-          cacheRead += u.cache_read_input_tokens || 0;
-          cacheCreation += u.cache_creation_input_tokens || 0;
-          if (entry.message?.model) model = entry.message.model;
-        }
-        if (entry.message?.content) {
-          const content = entry.message.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'tool_use') toolCallCount++;
-            }
-          }
-        }
-        if (entry.timestamp) {
-          lastActivity = new Date(entry.timestamp);
-        }
-      } catch { /* skip malformed lines */ }
-    }
-  } catch { /* file may not exist yet */ }
-
-  return { inputTokens, outputTokens, cacheRead, cacheCreation, messageCount, toolCallCount, lastActivity, model };
-}
-
-// ─── Data Collection ─────────────────────────────────────────────────
-
-function getActiveSessions() {
-  const sessions = [];
-  try {
-    const files = fs.readdirSync(SESSIONS_DIR);
-    for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-      const pid = parseInt(path.basename(file, '.json'), 10);
-      const data = readJSON(path.join(SESSIONS_DIR, file));
-      if (!data) continue;
-
-      const alive = isPidRunning(pid);
-      const tokens = getSessionTokens(data.sessionId, data.cwd);
-      const uptime = Date.now() - data.startedAt;
-
-      sessions.push({
-        pid,
-        sessionId: data.sessionId,
-        project: getProjectName(data.cwd),
-        cwd: data.cwd,
-        startedAt: data.startedAt,
-        alive,
-        uptime,
-        ...tokens,
-      });
-    }
-  } catch { /* sessions dir may not exist */ }
-
-  // Sort: alive first, then by startedAt descending
-  sessions.sort((a, b) => {
-    if (a.alive !== b.alive) return a.alive ? -1 : 1;
-    return b.startedAt - a.startedAt;
-  });
-
-  return sessions;
-}
-
-function getStatsCache() {
-  return readJSON(STATS_FILE) || {};
-}
-
-function getUsagePercentage(stats) {
-  // Claude Pro/Team plan: estimate based on daily token limits
-  // Max 5 plan has ~$200/month usage cap
-  // Estimate: track daily output tokens vs typical daily budget
-  const today = new Date().toISOString().slice(0, 10);
-  const todayActivity = stats.dailyActivity?.find(d => d.date === today);
-  const todayTokens = stats.dailyModelTokens?.find(d => d.date === today);
-
-  // Calculate total output tokens for today across all models
-  let todayOutputTokens = 0;
-  if (todayTokens?.tokensByModel) {
-    todayOutputTokens = Object.values(todayTokens.tokensByModel).reduce((a, b) => a + b, 0);
-  }
-
-  // Calculate monthly usage from modelUsage
-  const totalOutput = Object.values(stats.modelUsage || {})
-    .reduce((sum, m) => sum + (m.outputTokens || 0), 0);
-  const totalInput = Object.values(stats.modelUsage || {})
-    .reduce((sum, m) => sum + (m.inputTokens || 0), 0);
-  const totalCacheRead = Object.values(stats.modelUsage || {})
-    .reduce((sum, m) => sum + (m.cacheReadInputTokens || 0), 0);
-  const totalCacheCreation = Object.values(stats.modelUsage || {})
-    .reduce((sum, m) => sum + (m.cacheCreationInputTokens || 0), 0);
-
-  // Calculate cost estimate (Opus 4.6 pricing: $15/1M input, $75/1M output, cache read $1.5/1M, cache write $18.75/1M)
-  const costEstimate =
-    (totalInput / 1_000_000) * 15 +
-    (totalOutput / 1_000_000) * 75 +
-    (totalCacheRead / 1_000_000) * 1.5 +
-    (totalCacheCreation / 1_000_000) * 18.75;
-
-  // Estimate monthly budget usage (Max 5 plan ~$200/month)
-  // We'll track this month's data
-  const now = new Date();
-  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const thisMonthTokens = (stats.dailyModelTokens || [])
-    .filter(d => d.date.startsWith(monthStart))
-    .reduce((sum, d) => {
-      return sum + Object.values(d.tokensByModel || {}).reduce((a, b) => a + b, 0);
-    }, 0);
-
-  const thisMonthMessages = (stats.dailyActivity || [])
-    .filter(d => d.date.startsWith(monthStart))
-    .reduce((sum, d) => sum + d.messageCount, 0);
-
-  return {
-    todayMessages: todayActivity?.messageCount || 0,
-    todayTokens: todayOutputTokens,
-    todaySessions: todayActivity?.sessionCount || 0,
-    todayToolCalls: todayActivity?.toolCallCount || 0,
-    totalOutput,
-    totalInput,
-    totalCacheRead,
-    totalCacheCreation,
-    costEstimate,
-    thisMonthTokens,
-    thisMonthMessages,
-    totalSessions: stats.totalSessions || 0,
-    totalMessages: stats.totalMessages || 0,
-  };
 }
 
 // ─── UI Setup ────────────────────────────────────────────────────────
@@ -229,7 +51,7 @@ const titleBox = grid.set(0, 0, 1, 12, blessed.box, {
 });
 
 // Active Sessions Table
-const sessionsTable = grid.set(1, 0, 5, 12, contrib.table, {
+const sessionsTable = grid.set(1, 0, 4, 12, contrib.table, {
   keys: true,
   fg: 'white',
   selectedFg: 'white',
@@ -248,7 +70,7 @@ const sessionsTable = grid.set(1, 0, 5, 12, contrib.table, {
 });
 
 // Usage Gauge
-const usageGauge = grid.set(6, 0, 2, 4, contrib.gauge, {
+const usageGauge = grid.set(5, 0, 2, 3, contrib.gauge, {
   label: ' 📊 Today Usage ',
   stroke: 'green',
   fill: 'white',
@@ -257,7 +79,7 @@ const usageGauge = grid.set(6, 0, 2, 4, contrib.gauge, {
 });
 
 // Today Stats
-const todayBox = grid.set(6, 4, 2, 4, blessed.box, {
+const todayBox = grid.set(5, 3, 2, 3, blessed.box, {
   label: ' 📅 Today Stats ',
   tags: true,
   border: { type: 'line', fg: 'cyan' },
@@ -269,7 +91,7 @@ const todayBox = grid.set(6, 4, 2, 4, blessed.box, {
 });
 
 // Monthly Stats
-const monthBox = grid.set(6, 8, 2, 4, blessed.box, {
+const monthBox = grid.set(5, 6, 2, 3, blessed.box, {
   label: ' 📆 This Month ',
   tags: true,
   border: { type: 'line', fg: 'cyan' },
@@ -280,8 +102,20 @@ const monthBox = grid.set(6, 8, 2, 4, blessed.box, {
   padding: { left: 1, right: 1 },
 });
 
+// Efficiency Metrics
+const efficiencyBox = grid.set(5, 9, 2, 3, blessed.box, {
+  label: ' ⚙️  Efficiency ',
+  tags: true,
+  border: { type: 'line', fg: 'cyan' },
+  style: {
+    fg: 'white',
+    border: { fg: 'cyan' },
+  },
+  padding: { left: 1, right: 1 },
+});
+
 // Token Usage Sparkline (last 14 days)
-const tokenSpark = grid.set(8, 0, 2, 6, contrib.sparkline, {
+const tokenSpark = grid.set(7, 0, 2, 6, contrib.sparkline, {
   label: ' 📈 Daily Token Usage (14d) ',
   tags: true,
   border: { type: 'line', fg: 'cyan' },
@@ -292,7 +126,7 @@ const tokenSpark = grid.set(8, 0, 2, 6, contrib.sparkline, {
 });
 
 // Aggregate Model Usage
-const modelBox = grid.set(8, 6, 2, 6, blessed.box, {
+const modelBox = grid.set(7, 6, 2, 6, blessed.box, {
   label: ' 🤖 Aggregate Token Usage ',
   tags: true,
   border: { type: 'line', fg: 'cyan' },
@@ -304,7 +138,7 @@ const modelBox = grid.set(8, 6, 2, 6, blessed.box, {
 });
 
 // Activity Log (Messages per day bar)
-const activityBar = grid.set(10, 0, 2, 8, contrib.bar, {
+const activityBar = grid.set(9, 0, 2, 6, contrib.bar, {
   label: ' 📊 Daily Messages (14d) ',
   barWidth: 6,
   barSpacing: 1,
@@ -316,8 +150,20 @@ const activityBar = grid.set(10, 0, 2, 8, contrib.bar, {
   },
 });
 
-// Help / Status
-const helpBox = grid.set(10, 8, 2, 4, blessed.box, {
+// Records
+const recordsBox = grid.set(9, 6, 2, 3, blessed.box, {
+  label: ' 🏆 Records ',
+  tags: true,
+  border: { type: 'line', fg: 'cyan' },
+  style: {
+    fg: 'white',
+    border: { fg: 'cyan' },
+  },
+  padding: { left: 1, right: 1 },
+});
+
+// Projects & Help
+const helpBox = grid.set(9, 9, 2, 3, blessed.box, {
   label: ' ⌨️  Controls ',
   tags: true,
   border: { type: 'line', fg: 'cyan' },
@@ -333,25 +179,33 @@ const helpBox = grid.set(10, 8, 2, 4, blessed.box, {
     '{cyan-fg}Auto{/}   3s refresh',
 });
 
+// Projects count bar at bottom
+const projectsBox = grid.set(11, 0, 1, 12, blessed.box, {
+  tags: true,
+  style: {
+    fg: 'white',
+    bg: 'blue',
+  },
+});
+
 // ─── Update Dashboard ────────────────────────────────────────────────
 
 function updateDashboard() {
-  const sessions = getActiveSessions();
-  const stats = getStatsCache();
-  const usage = getUsagePercentage(stats);
+  const data = collect();
 
   // Update title with time
   const now = new Date();
   const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
+  const aliveCount = data.sessions.filter(s => s.alive).length;
   titleBox.setContent(
     `{center}{bold} ⚡ CLAUDE CODE CLI DASHBOARD  |  ${timeStr}  |  ` +
-    `${sessions.filter(s => s.alive).length} active sessions{/bold}{/center}`
+    `${aliveCount} active sessions{/bold}{/center}`
   );
 
   // Update sessions table
-  const tableData = sessions.map(s => [
+  const tableData = data.sessions.map(s => [
     String(s.pid),
-    s.project,
+    getProjectName(s.cwd),
     s.alive ? '{green-fg}● ACTIVE{/}' : '{red-fg}○ DEAD{/}',
     formatDuration(s.uptime),
     formatTokens(s.inputTokens + s.cacheRead),
@@ -366,56 +220,83 @@ function updateDashboard() {
     data: tableData.length > 0 ? tableData : [['', 'No sessions found', '', '', '', '', '', '', '']],
   });
 
-  // Update usage gauge - estimate daily usage percentage
-  // Assume a reasonable daily limit (e.g., ~50 messages for heavy use tracking)
-  const dailyMessageLimit = 200; // rough estimate for visibility
-  const dailyPct = Math.min(100, Math.round((usage.todayMessages / dailyMessageLimit) * 100));
+  // Update usage gauge
+  const dailyMessageLimit = 200;
+  const dailyPct = Math.min(100, Math.round((data.today.messages / dailyMessageLimit) * 100));
   usageGauge.setPercent(dailyPct);
 
   // Update today stats
   todayBox.setContent(
-    `{bold}Messages:{/}  {yellow-fg}${usage.todayMessages.toLocaleString()}{/}\n` +
-    `{bold}Tokens:{/}    {yellow-fg}${formatTokens(usage.todayTokens)}{/}\n` +
-    `{bold}Sessions:{/}  {yellow-fg}${usage.todaySessions}{/}\n` +
-    `{bold}Tools:{/}     {yellow-fg}${usage.todayToolCalls}{/}`
+    `{bold}Messages:{/}  {yellow-fg}${data.today.messages.toLocaleString()}{/}\n` +
+    `{bold}Tokens:{/}    {yellow-fg}${formatTokens(data.today.tokens)}{/}\n` +
+    `{bold}Sessions:{/}  {yellow-fg}${data.today.sessions}{/}\n` +
+    `{bold}Tools:{/}     {yellow-fg}${data.today.tools}{/}\n` +
+    `{bold}Est Cost:{/}  {yellow-fg}$${data.today.cost.toFixed(2)}{/}`
   );
 
   // Update monthly stats
   monthBox.setContent(
-    `{bold}Messages:{/}  {green-fg}${usage.thisMonthMessages.toLocaleString()}{/}\n` +
-    `{bold}Tokens:{/}    {green-fg}${formatTokens(usage.thisMonthTokens)}{/}\n` +
-    `{bold}Total Sess:{/} {green-fg}${usage.totalSessions}{/}\n` +
-    `{bold}All Time:{/}   {green-fg}${usage.totalMessages.toLocaleString()}{/} msgs`
+    `{bold}Messages:{/}  {green-fg}${data.month.messages.toLocaleString()}{/}\n` +
+    `{bold}Tokens:{/}    {green-fg}${formatTokens(data.month.tokens)}{/}\n` +
+    `{bold}Sessions:{/}  {green-fg}${data.month.sessions}{/}\n` +
+    `{bold}Tools:{/}     {green-fg}${data.month.tools.toLocaleString()}{/}\n` +
+    `{bold}Cost:{/}      {green-fg}$${data.month.cost.toFixed(2)}{/}`
+  );
+
+  // Update efficiency metrics
+  efficiencyBox.setContent(
+    `{bold}Tok/Msg:{/}   {magenta-fg}${formatTokens(data.efficiency.avgTokensPerMsg)}{/}\n` +
+    `{bold}Cache Hit:{/} {magenta-fg}${data.efficiency.cacheHitRate}%{/}\n` +
+    `{bold}Tools/Msg:{/} {magenta-fg}${data.efficiency.toolsPerMsg}{/}\n` +
+    `{bold}Total Tools:{/}{magenta-fg}${data.efficiency.totalTools.toLocaleString()}{/}`
   );
 
   // Update sparkline (last 14 days token usage)
-  const last14 = (stats.dailyModelTokens || []).slice(-14);
-  const sparkData = last14.map(d =>
-    Object.values(d.tokensByModel || {}).reduce((a, b) => a + b, 0)
-  );
-  const sparkLabels = last14.map(d => d.date.slice(5)); // MM-DD
+  const sparkData = data.dailyTokenHistory.map(d => d.tokens);
+  const sparkLabels = data.dailyTokenHistory.map(d => d.date.slice(5));
   if (sparkData.length > 0) {
     tokenSpark.setData(sparkLabels, sparkData);
   }
 
   // Update model usage box
   const lines = [];
-  for (const [model, data] of Object.entries(stats.modelUsage || {})) {
+  for (const [model, mData] of Object.entries(data.aggregate.modelUsage)) {
     const name = model.replace('claude-', '').replace('-20251101', '');
     lines.push(`{bold}{cyan-fg}${name}{/}`);
-    lines.push(`  In: ${formatTokens(data.inputTokens)}  Out: ${formatTokens(data.outputTokens)}`);
-    lines.push(`  Cache R: ${formatTokens(data.cacheReadInputTokens)}  W: ${formatTokens(data.cacheCreationInputTokens)}`);
+    lines.push(`  In: ${formatTokens(mData.inputTokens)}  Out: ${formatTokens(mData.outputTokens)}`);
+    lines.push(`  Cache R: ${formatTokens(mData.cacheReadInputTokens)}  W: ${formatTokens(mData.cacheCreationInputTokens)}`);
   }
-  lines.push(`\n{bold}Est. Cost:{/} {yellow-fg}$${usage.costEstimate.toFixed(2)}{/}`);
+  lines.push(`\n{bold}Est. Cost:{/} {yellow-fg}$${data.aggregate.costEstimate.toFixed(2)}{/}`);
   modelBox.setContent(lines.join('\n'));
 
   // Update activity bar (last 14 days messages)
-  const last14Activity = (stats.dailyActivity || []).slice(-14);
-  const barTitles = last14Activity.map(d => d.date.slice(5));
-  const barData = last14Activity.map(d => d.messageCount);
+  const barTitles = data.dailyHistory.map(d => d.date.slice(5));
+  const barData = data.dailyHistory.map(d => d.messages);
   if (barData.length > 0) {
     activityBar.setData({ titles: barTitles, data: barData });
   }
+
+  // Update records box
+  const longestStr = data.longestSession
+    ? formatDuration(data.longestSession)
+    : 'N/A';
+  const firstDate = data.firstSessionDate
+    ? data.firstSessionDate.slice(0, 10)
+    : 'N/A';
+  recordsBox.setContent(
+    `{bold}First Use:{/}  {white-fg}${firstDate}{/}\n` +
+    `{bold}Startups:{/}   {white-fg}${data.numStartups.toLocaleString()}{/}\n` +
+    `{bold}Longest:{/}    {white-fg}${longestStr}{/}\n` +
+    `{bold}Searches:{/}   {white-fg}${data.webSearches.toLocaleString()}{/}`
+  );
+
+  // Update projects bar
+  const projectCount = data.allProjects ? data.allProjects.length : 0;
+  projectsBox.setContent(
+    `{center} 📁 ${projectCount} project${projectCount !== 1 ? 's' : ''} tracked  |  ` +
+    `All Time: ${data.aggregate.totalSessions} sessions, ${data.aggregate.totalMessages.toLocaleString()} messages  |  ` +
+    `Est. Total Cost: $${data.aggregate.costEstimate.toFixed(2)}{/center}`
+  );
 
   screen.render();
 }
