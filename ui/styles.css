@@ -92,6 +92,62 @@ body {
   padding-left: 2px;
 }
 
+/* ── Model Switcher ── */
+.model-switcher {
+  display: flex;
+  gap: 8px;
+}
+.model-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+.model-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+}
+.model-btn.active {
+  background: linear-gradient(135deg, rgba(124,110,240,0.15), rgba(124,110,240,0.08));
+  border-color: var(--accent);
+}
+.model-btn .model-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+}
+.model-btn[data-model="opus"] .model-icon {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+}
+.model-btn[data-model="sonnet"] .model-icon {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+}
+.model-btn[data-model="haiku"] .model-icon {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+}
+.model-btn .model-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.model-btn.active .model-name {
+  color: var(--accent);
+}
+
 /* ── Plan Usage ── */
 .plan-usage-card {
   background: var(--bg-card);

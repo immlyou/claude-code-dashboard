@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('api', {
   checkNotifications: (data) => ipcRenderer.invoke('check-notifications', data),
   setRefreshInterval: (ms) => ipcRenderer.invoke('set-refresh-interval', ms),
   getRefreshInterval: () => ipcRenderer.invoke('get-refresh-interval'),
+  getClaudeModel: () => ipcRenderer.invoke('get-claude-model'),
+  setClaudeModel: (model) => ipcRenderer.invoke('set-claude-model', model),
   onThemeChanged: (callback) => {
     ipcRenderer.on('theme-changed', (_, theme) => callback(theme));
   },

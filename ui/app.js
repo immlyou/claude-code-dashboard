@@ -994,6 +994,36 @@ function downloadFile(content, filename, mime) {
   URL.revokeObjectURL(url);
 }
 
+// ── Model Switcher ──
+let currentModel = 'sonnet';
+
+async function loadCurrentModel() {
+  try {
+    currentModel = await window.api.getClaudeModel();
+    updateModelButtons();
+  } catch (_) {}
+}
+
+function updateModelButtons() {
+  document.querySelectorAll('.model-btn').forEach(btn => {
+    const model = btn.dataset.model;
+    btn.classList.toggle('active', model === currentModel);
+  });
+}
+
+async function switchModel(model) {
+  if (model === currentModel) return;
+  try {
+    const result = await window.api.setClaudeModel(model);
+    if (result.ok) {
+      currentModel = model;
+      updateModelButtons();
+    }
+  } catch (e) {
+    console.error('Failed to switch model:', e);
+  }
+}
+
 // ── Main refresh ──
 async function refresh() {
   try {
@@ -1051,6 +1081,8 @@ loadLocales().then(() => {
   applyLang();
   refresh();
 });
+loadCurrentModel();
+loadRefreshSetting();
 window._refreshTimer = setInterval(refresh, refreshInterval);
 
 // Dynamic version

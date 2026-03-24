@@ -188,6 +188,32 @@ if (!gotLock) {
       return settings.refreshInterval || DEFAULT_REFRESH_INTERVAL;
     });
 
+    // ── Claude Model Switcher ──
+    const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+
+    ipcMain.handle('get-claude-model', async () => {
+      try {
+        const settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8'));
+        return settings.model || 'sonnet';
+      } catch {
+        return 'sonnet';
+      }
+    });
+
+    ipcMain.handle('set-claude-model', async (_, model) => {
+      try {
+        let settings = {};
+        try {
+          settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8'));
+        } catch {}
+        settings.model = model;
+        fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+        return { ok: true, model };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    });
+
     // ── Plan Usage Scraper ──
     let scraperWin = null;
     let scrapeResolved = false;
