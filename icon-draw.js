@@ -503,4 +503,142 @@ function drawCampfireStatic(size, opts = {}) {
   return drawCampfire(size, 2, opts);
 }
 
-module.exports = { Canvas, buildPNG, drawCampfire, drawCampfireStatic, TOTAL_FRAMES };
+// ─── Money Stack Icon (for App Icon) ─────────────────────────────────
+
+function drawMoneyIcon(size) {
+  const c = new Canvas(size, size);
+  const S = size;
+  const cx = S / 2;
+  const cy = S / 2;
+
+  // ── Background: rounded square with gradient ──
+  const pad = S * 0.06;
+  const bgRad = S * 0.22;
+  for (let y = pad; y < S - pad; y++) {
+    const t = (y - pad) / (S - 2 * pad);
+    // Dark green gradient
+    const r = Math.round(20 + (35 - 20) * t);
+    const g = Math.round(60 + (45 - 60) * t);
+    const b = Math.round(30 + (25 - 30) * t);
+    for (let x = pad; x < S - pad; x++) {
+      let inside = true;
+      const checks = [
+        [pad + bgRad, pad + bgRad, x < pad + bgRad && y < pad + bgRad],
+        [S - pad - bgRad, pad + bgRad, x > S - pad - bgRad && y < pad + bgRad],
+        [pad + bgRad, S - pad - bgRad, x < pad + bgRad && y > S - pad - bgRad],
+        [S - pad - bgRad, S - pad - bgRad, x > S - pad - bgRad && y > S - pad - bgRad],
+      ];
+      for (const [ccx, ccy, cond] of checks) {
+        if (cond && (x - ccx) ** 2 + (y - ccy) ** 2 > bgRad * bgRad) { inside = false; break; }
+      }
+      if (inside) c.set(x, y, r, g, b, 255);
+    }
+  }
+
+  // ── Stack of bills (3D effect) ──
+  const stackW = S * 0.65;
+  const stackH = S * 0.35;
+  const stackD = S * 0.15; // thickness
+  const stackCX = cx;
+  const stackCY = cy + S * 0.05;
+
+  // Shadow under stack
+  c.fillEllipse(stackCX, stackCY + stackH / 2 + S * 0.08, stackW * 0.5, S * 0.06, 10, 30, 15, 80);
+
+  // Draw multiple bills in the stack (bottom to top)
+  const numBills = 8;
+  for (let i = 0; i < numBills; i++) {
+    const t = i / (numBills - 1);
+    const offsetY = -t * stackD;
+    const offsetX = (Math.random() - 0.5) * S * 0.01 * (numBills - i); // slight misalignment
+
+    const bx = stackCX + offsetX;
+    const by = stackCY + offsetY;
+
+    // Bill colors: darker at bottom, brighter at top
+    const baseR = 55 + t * 30;
+    const baseG = 130 + t * 40;
+    const baseB = 50 + t * 25;
+
+    // Bill body
+    const hw = stackW / 2;
+    const hh = stackH / 2;
+
+    // Main bill rectangle
+    c.fillRect(bx - hw, by - hh, bx + hw, by + hh, baseR, baseG, baseB, 255);
+
+    // Border
+    c.drawLine(bx - hw, by - hh, bx + hw, by - hh, S * 0.008, baseR - 20, baseG - 30, baseB - 15, 255);
+    c.drawLine(bx - hw, by + hh, bx + hw, by + hh, S * 0.008, baseR - 20, baseG - 30, baseB - 15, 255);
+    c.drawLine(bx - hw, by - hh, bx - hw, by + hh, S * 0.008, baseR - 20, baseG - 30, baseB - 15, 255);
+    c.drawLine(bx + hw, by - hh, bx + hw, by + hh, S * 0.008, baseR - 20, baseG - 30, baseB - 15, 255);
+  }
+
+  // ── Top bill details ──
+  const topY = stackCY - stackD;
+  const hw = stackW / 2;
+  const hh = stackH / 2;
+
+  // Lighter top bill
+  c.fillRect(cx - hw, topY - hh, cx + hw, topY + hh, 85, 175, 75, 255);
+
+  // Inner decorative border
+  const inset = S * 0.04;
+  c.drawLine(cx - hw + inset, topY - hh + inset, cx + hw - inset, topY - hh + inset, S * 0.006, 60, 130, 55, 200);
+  c.drawLine(cx - hw + inset, topY + hh - inset, cx + hw - inset, topY + hh - inset, S * 0.006, 60, 130, 55, 200);
+  c.drawLine(cx - hw + inset, topY - hh + inset, cx - hw + inset, topY + hh - inset, S * 0.006, 60, 130, 55, 200);
+  c.drawLine(cx + hw - inset, topY - hh + inset, cx + hw - inset, topY + hh - inset, S * 0.006, 60, 130, 55, 200);
+
+  // Inner rectangle (denomination area)
+  const innerW = stackW * 0.45;
+  const innerH = stackH * 0.55;
+  c.fillRect(cx - innerW / 2, topY - innerH / 2, cx + innerW / 2, topY + innerH / 2, 100, 195, 90, 200);
+
+  // ── Large $ symbol ──
+  const dollarSize = S * 0.18;
+
+  // Vertical line of $
+  c.drawLine(cx, topY - dollarSize * 0.9, cx, topY + dollarSize * 0.9, S * 0.025, 40, 100, 40, 255);
+
+  // Top curve of S
+  c.fillEllipse(cx - dollarSize * 0.15, topY - dollarSize * 0.35, dollarSize * 0.4, dollarSize * 0.3, 40, 100, 40, 255);
+  // Bottom curve of S
+  c.fillEllipse(cx + dollarSize * 0.15, topY + dollarSize * 0.35, dollarSize * 0.4, dollarSize * 0.3, 40, 100, 40, 255);
+
+  // Cut out the inner parts to make S shape
+  c.fillEllipse(cx - dollarSize * 0.15, topY - dollarSize * 0.35, dollarSize * 0.2, dollarSize * 0.15, 100, 195, 90, 255);
+  c.fillEllipse(cx + dollarSize * 0.15, topY + dollarSize * 0.35, dollarSize * 0.2, dollarSize * 0.15, 100, 195, 90, 255);
+
+  // S middle connection
+  c.drawLine(cx - dollarSize * 0.3, topY, cx + dollarSize * 0.3, topY, S * 0.03, 40, 100, 40, 255);
+
+  // ── Corner "100" text indicators ──
+  const cornerOff = S * 0.08;
+  // Top-left 100
+  c.fillCircle(cx - hw + cornerOff + S * 0.02, topY - hh + cornerOff, S * 0.025, 50, 110, 45, 180);
+  c.fillCircle(cx - hw + cornerOff + S * 0.05, topY - hh + cornerOff, S * 0.02, 50, 110, 45, 180);
+  c.fillCircle(cx - hw + cornerOff + S * 0.075, topY - hh + cornerOff, S * 0.02, 50, 110, 45, 180);
+  // Bottom-right 100
+  c.fillCircle(cx + hw - cornerOff - S * 0.02, topY + hh - cornerOff, S * 0.025, 50, 110, 45, 180);
+  c.fillCircle(cx + hw - cornerOff - S * 0.05, topY + hh - cornerOff, S * 0.02, 50, 110, 45, 180);
+  c.fillCircle(cx + hw - cornerOff - S * 0.075, topY + hh - cornerOff, S * 0.02, 50, 110, 45, 180);
+
+  // ── Outer border of top bill ──
+  c.drawLine(cx - hw, topY - hh, cx + hw, topY - hh, S * 0.012, 45, 105, 40, 255);
+  c.drawLine(cx - hw, topY + hh, cx + hw, topY + hh, S * 0.012, 45, 105, 40, 255);
+  c.drawLine(cx - hw, topY - hh, cx - hw, topY + hh, S * 0.012, 45, 105, 40, 255);
+  c.drawLine(cx + hw, topY - hh, cx + hw, topY + hh, S * 0.012, 45, 105, 40, 255);
+
+  // ── Shine/highlight on top ──
+  for (let x = cx - hw + S * 0.02; x < cx + hw - S * 0.02; x++) {
+    const shine = Math.max(0, 1 - Math.abs(x - (cx - hw * 0.3)) / (S * 0.15));
+    if (shine > 0) {
+      c.set(x, topY - hh + S * 0.015, 150, 220, 140, Math.round(shine * 60));
+      c.set(x, topY - hh + S * 0.02, 150, 220, 140, Math.round(shine * 40));
+    }
+  }
+
+  return c;
+}
+
+module.exports = { Canvas, buildPNG, drawCampfire, drawCampfireStatic, drawMoneyIcon, TOTAL_FRAMES };

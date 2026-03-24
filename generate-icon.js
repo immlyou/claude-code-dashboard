@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * Generate all icon sizes for the macOS app.
- * Uses shared icon-draw.js — campfire icon (static frame).
+ * Uses shared icon-draw.js — money stack icon.
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { buildPNG, drawCampfireStatic } = require('./icon-draw');
+const { buildPNG, drawMoneyIcon } = require('./icon-draw');
 
-console.log('Drawing campfire icon at 1024x1024...');
-const master = drawCampfireStatic(1024);
+console.log('Drawing money icon at 1024x1024...');
+const master = drawMoneyIcon(1024);
 
 const iconsetDir = path.join(__dirname, 'build', 'icon.iconset');
 fs.mkdirSync(iconsetDir, { recursive: true });
