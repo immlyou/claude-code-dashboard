@@ -10,6 +10,7 @@ A macOS menu bar app for monitoring your Claude Code CLI sessions in real-time.
 ## Features
 
 - **Live Session Monitoring** - Track active Claude Code CLI sessions with real-time status
+- **Model Switcher** - Quickly switch default model (Opus/Sonnet/Haiku) to balance usage across limits
 - **Usage Statistics** - View today's and monthly token usage, message counts, and estimated costs
 - **Cost Estimation** - Per-model pricing (Opus/Sonnet/Haiku) with cache hit rate tracking
 - **Activity Heatmap** - Visualize your coding patterns by hour and day of week
