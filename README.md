@@ -2,6 +2,7 @@
 
 A macOS menu bar app for monitoring your Claude Code CLI sessions in real-time.
 
+![Build](https://github.com/immlyou/claude-code-dashboard/actions/workflows/build.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 ![Electron](https://img.shields.io/badge/electron-34.x-47848F.svg)
@@ -40,6 +41,13 @@ A macOS menu bar app for monitoring your Claude Code CLI sessions in real-time.
 ```
 
 ## Installation
+
+### Download Release
+
+Download the latest DMG from [GitHub Releases](https://github.com/immlyou/claude-code-dashboard/releases):
+
+- **Apple Silicon (M1/M2/M3)**: `Claude-Code-Dashboard-x.x.x-arm64.dmg`
+- **Intel Mac**: `Claude-Code-Dashboard-x.x.x-x64.dmg`
 
 ### From Source
 
