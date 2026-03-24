@@ -18,9 +18,11 @@ A macOS menu bar app for monitoring your Claude Code CLI sessions in real-time.
 - **Plan Usage Scraping** - Fetch your Claude.ai subscription limits directly
 - **Export Data** - Export your stats as JSON or CSV
 
-## Screenshot
+## Screenshots
 
-<img src="assets/screenshot.png" alt="Claude Code Dashboard" width="280">
+| Plan Usage & Account | Sessions & Statistics |
+|:---:|:---:|
+| <img src="assets/screenshot.png" alt="Plan Usage" width="280"> | <img src="assets/screenshot-2.png" alt="Statistics" width="280"> |
 
 ## Installation
 
