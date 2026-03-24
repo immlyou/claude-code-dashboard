@@ -20,25 +20,7 @@ A macOS menu bar app for monitoring your Claude Code CLI sessions in real-time.
 
 ## Screenshot
 
-```
-┌─────────────────────────────────────┐
-│  🔥 Claude Code Dashboard     ⚙️    │
-├─────────────────────────────────────┤
-│  Plan Usage        [████████░░] 80% │
-├─────────────────────────────────────┤
-│  Active Sessions                    │
-│  🟢 my-project   sonnet   1.2K out  │
-│  🟢 api-server   opus     3.5K out  │
-├─────────────────────────────────────┤
-│  Today         │  This Month        │
-│  156 msgs      │  4,567 msgs        │
-│  89K tokens    │  2.1M tokens       │
-│  $2.34         │  $67.89            │
-├─────────────────────────────────────┤
-│  Daily Activity (14d)               │
-│  █▆▄▂▅▇█▃▂▄▆▇██                     │
-└─────────────────────────────────────┘
-```
+<img src="assets/screenshot.png" alt="Claude Code Dashboard" width="280">
 
 ## Installation
 
