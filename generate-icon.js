@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
  * Generate all icon sizes for the macOS app.
- * Uses shared icon-draw.js — money stack icon.
+ * Uses shared icon-draw.js — campfire with cash being thrown in.
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { buildPNG, drawMoneyIcon } = require('./icon-draw');
+const { buildPNG, drawCampfire } = require('./icon-draw');
 
-console.log('Drawing money icon at 1024x1024...');
-const master = drawMoneyIcon(1024);
+// Use frame 4: cash stack mid-flight from the right, clearly visible
+console.log('Drawing campfire + cash icon at 1024x1024...');
+const master = drawCampfire(1024, 4, { showBackground: true });
 
 const iconsetDir = path.join(__dirname, 'build', 'icon.iconset');
 fs.mkdirSync(iconsetDir, { recursive: true });
