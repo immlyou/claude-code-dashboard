@@ -785,6 +785,19 @@ body {
 }
 .lb-row.me .lb-nickname::after { content: ' (You)'; color: var(--accent); font-size: 10px; }
 
+/* Leaderboard progress bar */
+.lb-bar-track {
+  width: 100%; height: 6px; margin-top: 4px;
+  background: rgba(128,128,128,0.15); border-radius: 3px; overflow: hidden;
+}
+.lb-bar-fill {
+  height: 100%; width: 0; border-radius: 3px;
+  transition: width 0.6s cubic-bezier(0.16,1,0.3,1);
+}
+.lb-row.top-1 .lb-bar-fill { box-shadow: 0 0 8px rgba(255,215,0,0.5); }
+.lb-row.top-2 .lb-bar-fill { box-shadow: 0 0 6px rgba(192,192,192,0.4); }
+.lb-row.top-3 .lb-bar-fill { box-shadow: 0 0 6px rgba(205,127,50,0.4); }
+
 .lb-score {
   font-size: 12px; font-weight: 700; color: var(--accent-light);
   text-align: right; min-width: 70px;

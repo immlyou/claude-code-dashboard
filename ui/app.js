@@ -1039,42 +1039,73 @@ let currentLeaderboardTab = 'today';
 let firebaseInitialized = false;
 let firebaseDb = null;
 
+// DEBUG: 把 log 直接顯示在排行榜區域
+const _fbLogs = [];
+function _fblog(msg) {
+  console.log('[FB-DEBUG] ' + msg);
+  _fbLogs.push(new Date().toLocaleTimeString() + ' ' + msg);
+  const el = document.getElementById('leaderboardList');
+  if (el) el.innerHTML = '<pre style="font-size:10px;color:#999;white-space:pre-wrap;padding:8px">' + _fbLogs.join('\n') + '</pre>';
+}
+
 async function initLeaderboard() {
   try {
     leaderboardSettings = await window.api.getLeaderboardSettings();
+    _fblog('settings: enabled=' + leaderboardSettings.enabled + ' userId=' + leaderboardSettings.userId);
     updateLeaderboardUI();
 
     if (leaderboardSettings.enabled && leaderboardSettings.userId) {
+      _fblog('enabled=true, calling initFirebase...');
       await initFirebase();
-      refreshLeaderboard();
+      _fblog('calling refreshLeaderboard...');
+      await refreshLeaderboard();
+      _fblog('refreshLeaderboard done, data keys: ' + Object.keys(leaderboardData).join(','));
+      for (const k of Object.keys(leaderboardData)) {
+        _fblog('  ' + k + ': ' + (leaderboardData[k] || []).length + ' entries');
+      }
+    } else {
+      _fblog('NOT enabled. enabled=' + leaderboardSettings.enabled + ' userId=' + leaderboardSettings.userId);
     }
   } catch (e) {
-    console.error('Failed to init leaderboard:', e);
+    _fblog('INIT ERROR: ' + (e.message || e));
   }
 }
 
 async function initFirebase() {
   if (firebaseInitialized) return;
+  const _fblog = (msg) => { console.log('[FB-DEBUG] ' + msg); document.title = '[FB] ' + msg; };
 
   try {
     const config = window.FIREBASE_CONFIG;
+    _fblog('step1: config=' + (config ? config.apiKey.slice(0,8) + '...' : 'NULL'));
+    _fblog('step2: typeof firebase=' + typeof firebase);
+
+    if (typeof firebase === 'undefined') {
+      _fblog('FATAL: firebase SDK not loaded!');
+      return;
+    }
+
     if (!config || config.apiKey === 'YOUR_API_KEY') {
-      console.warn('Firebase not configured');
+      _fblog('FATAL: config not set');
       return;
     }
 
     if (!firebase.apps.length) {
       firebase.initializeApp(config);
     }
+    _fblog('step3: initializeApp done');
 
     firebaseDb = firebase.database();
+    _fblog('step4: database ref ok');
 
-    // Anonymous auth
-    await firebase.auth().signInAnonymously();
+    const cred = await firebase.auth().signInAnonymously();
+    _fblog('step5: auth ok uid=' + cred.user.uid);
+
     firebaseInitialized = true;
-    console.log('Firebase initialized');
+    _fblog('step6: FULLY INITIALIZED ✅');
   } catch (e) {
-    console.error('Firebase init error:', e);
+    _fblog('ERROR: ' + (e.code || '') + ' ' + (e.message || e));
+    console.error('[FB-DEBUG] Firebase init error:', e);
   }
 }
 
@@ -1268,7 +1299,7 @@ function renderLeaderboard() {
   const data = leaderboardData[currentLeaderboardTab] || [];
 
   if (data.length === 0) {
-    listEl.innerHTML = '<div class="lb-empty">No data yet. Be the first!</div>';
+    listEl.innerHTML = '<div class="lb-empty">No data yet. Be the first! &#x1F680;</div>';
     userEl.classList.add('hidden');
     return;
   }
@@ -1276,6 +1307,10 @@ function renderLeaderboard() {
   const isMonthly = currentLeaderboardTab === 'monthly';
   const userId = leaderboardSettings.userId;
   let userInTop10 = false;
+  const maxScore = data[0]?.score || 1;
+
+  // Medal emojis for top 3
+  const medals = ['&#x1F947;', '&#x1F948;', '&#x1F949;'];
 
   let html = '';
   data.slice(0, 10).forEach((entry, i) => {
@@ -1286,12 +1321,25 @@ function renderLeaderboard() {
     const topClass = rank <= 3 ? ` top-${rank}` : '';
     const meClass = isMe ? ' me' : '';
     const scoreDisplay = isMonthly ? formatCost(entry.score) : formatTokens(entry.score);
+    const pct = Math.max(8, (entry.score / maxScore) * 100);
+    const rankLabel = rank <= 3 ? medals[rank - 1] : rank;
+
+    // Bar color based on rank
+    let barColor;
+    if (rank === 1) barColor = 'linear-gradient(90deg, #ffd700, #ffec8b)';
+    else if (rank === 2) barColor = 'linear-gradient(90deg, #b0b8c4, #d4d8e0)';
+    else if (rank === 3) barColor = 'linear-gradient(90deg, #cd7f32, #daa06d)';
+    else if (isMe) barColor = 'linear-gradient(90deg, var(--accent), var(--accent-light))';
+    else barColor = 'linear-gradient(90deg, rgba(124,110,240,0.3), rgba(124,110,240,0.1))';
 
     html += `
       <div class="lb-row${topClass}${meClass}">
-        <div class="lb-rank">${rank}</div>
+        <div class="lb-rank">${rankLabel}</div>
         <div class="lb-info">
-          <div class="lb-nickname">${escHtml(entry.nickname || 'Anonymous')}</div>
+          <div class="lb-nickname">${escHtml(entry.nickname || 'Anonymous')}${isMe ? '' : ''}</div>
+          <div class="lb-bar-track">
+            <div class="lb-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+          </div>
         </div>
         <div class="lb-score">${scoreDisplay}</div>
       </div>
@@ -1300,19 +1348,29 @@ function renderLeaderboard() {
 
   listEl.innerHTML = html;
 
+  // Animate bars
+  requestAnimationFrame(() => {
+    listEl.querySelectorAll('.lb-bar-fill').forEach((bar, i) => {
+      bar.style.transition = `width 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.05}s`;
+    });
+  });
+
   // Show user position if not in top 10
   if (!userInTop10 && userId) {
-    // Find user's position
     const userEntry = data.find(e => e.id === userId);
     if (userEntry) {
       const userRank = data.findIndex(e => e.id === userId) + 1;
       const scoreDisplay = isMonthly ? formatCost(userEntry.score) : formatTokens(userEntry.score);
+      const pct = Math.max(8, (userEntry.score / maxScore) * 100);
       userEl.innerHTML = `
-        <div class="lb-rank">${userRank}</div>
+        <div class="lb-rank">&#x2B50;</div>
         <div class="lb-info">
           <div class="lb-nickname">${escHtml(userEntry.nickname)}</div>
+          <div class="lb-bar-track">
+            <div class="lb-bar-fill" style="width:${pct}%;background:linear-gradient(90deg, var(--accent), var(--accent-light))"></div>
+          </div>
         </div>
-        <div class="lb-score">${scoreDisplay}</div>
+        <div class="lb-score">#${userRank} ${scoreDisplay}</div>
       `;
       userEl.classList.remove('hidden');
     } else {
@@ -1424,6 +1482,11 @@ async function refresh() {
     const refreshEl = document.getElementById('refreshTime');
     if (refreshEl) refreshEl.textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false });
 
+    // Push leaderboard stats on every refresh (if enabled)
+    if (firebaseInitialized && leaderboardSettings.enabled) {
+      pushLeaderboardStats();
+    }
+
     // Trigger notification checks
     try {
       const deadSessions = data.sessions.filter(s => !s.alive).map(s => ({ pid: s.pid, project: s.project }));
@@ -1476,8 +1539,8 @@ setTimeout(() => fetchPlanUsage(), 6000);
 setInterval(() => fetchPlanUsage(), 300000);
 
 // ── Cloud Leaderboard ──
-// Initialize after splash
-setTimeout(() => initLeaderboard(), 6500);
+// Initialize after splash (reduced delay)
+setTimeout(() => initLeaderboard(), 2000);
 
 // Refresh leaderboard every 1 minute
 setInterval(() => {

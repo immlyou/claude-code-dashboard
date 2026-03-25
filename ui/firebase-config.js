@@ -3,12 +3,13 @@
 // https://console.firebase.google.com/
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyB0Y87d2ByEnW43iFg1PZq4KaKVUjO0Yzs",
+  authDomain: "claude-dashboard-leaderboard.firebaseapp.com",
+  databaseURL: "https://claude-dashboard-leaderboard-default-rtdb.firebaseio.com",
+  projectId: "claude-dashboard-leaderboard",
+  storageBucket: "claude-dashboard-leaderboard.firebasestorage.app",
+  messagingSenderId: "16814808692",
+  appId: "1:16814808692:web:43e6bb1a04ed546130bb21"
 };
 
 // 設定步驟：

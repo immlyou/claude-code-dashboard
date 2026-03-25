@@ -335,7 +335,7 @@ function collect() {
     email: oauthAccount.emailAddress || '',
     orgName: oauthAccount.organizationName || '',
     orgRole: oauthAccount.organizationRole || '',
-    billingType: oauthAccount.billingType || '',
+    billingType: oauthAccount.billingType || (oauthAccount.hasExtraUsageEnabled ? 'max' : (oauthAccount.organizationRole ? 'pro' : 'free')),
     hasExtraUsage: oauthAccount.hasExtraUsageEnabled || false,
     extraUsageDisabledReason: claudeJson.cachedExtraUsageDisabledReason || null,
     accountCreatedAt: oauthAccount.accountCreatedAt || '',

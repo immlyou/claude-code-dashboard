@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code Dashboard</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+  <!-- Firebase SDK (local for Electron compatibility) -->
+  <script src="firebase-app-compat.js"></script>
+  <script src="firebase-database-compat.js"></script>
+  <script src="firebase-auth-compat.js"></script>
   <script src="firebase-config.js"></script>
 </head>
 <body>
@@ -16,7 +16,7 @@
   <div id="splashScreen">
     <div class="splash-logo">C</div>
     <div class="splash-title">Claude Code Dashboard</div>
-    <div class="splash-version app-version">v3.3.0</div>
+    <div class="splash-version app-version">v3.4.3</div>
     <div class="splash-copyright">
       &copy; 2026 imchris. All rights reserved.<br>
       Built for macOS menu bar monitoring.
@@ -70,7 +70,7 @@
         <div class="settings-section-title" id="aboutSectionTitle">About</div>
         <div style="margin-bottom:10px;">
           <span style="font-size:13px;font-weight:600;">Claude Code Dashboard</span>
-          <span class="app-version" style="font-size:11px;color:var(--text-secondary);margin-left:6px;">v3.3.0</span>
+          <span class="app-version" style="font-size:11px;color:var(--text-secondary);margin-left:6px;">v3.4.3</span>
         </div>
         <div class="changelog-list" id="changelogList"></div>
       </div>
@@ -83,6 +83,47 @@
   <div class="content">
     <!-- Error banner (Item 6) -->
     <div id="errorBanner" class="error-banner" style="display:none;"></div>
+
+    <!-- Cloud Leaderboard (moved to top) -->
+    <div class="section" id="leaderboardSection">
+      <div class="section-title">
+        &#x1F3C6; Cloud Leaderboard
+        <span class="leaderboard-badge" id="leaderboardStatus">OFF</span>
+      </div>
+
+      <!-- Opt-in prompt (shown when not enabled) -->
+      <div id="leaderboardOptIn" class="leaderboard-optin">
+        <div class="optin-icon">&#x1F525;</div>
+        <div class="optin-title">Join the Community Leaderboard</div>
+        <div class="optin-desc">Compare your Claude usage with other developers worldwide. Anonymous &amp; opt-in.</div>
+        <button class="optin-btn" onclick="openLeaderboardSetup()">Enable Leaderboard</button>
+      </div>
+
+      <!-- Leaderboard content (shown when enabled) -->
+      <div id="leaderboardContent" style="display:none;">
+        <!-- Category tabs -->
+        <div class="leaderboard-tabs">
+          <button class="lb-tab active" data-cat="today" onclick="switchLeaderboardTab('today')">&#x26A1; Today</button>
+          <button class="lb-tab" data-cat="weekly" onclick="switchLeaderboardTab('weekly')">&#x1F4C5; Weekly</button>
+          <button class="lb-tab" data-cat="monthly" onclick="switchLeaderboardTab('monthly')">&#x1F4B0; Monthly $</button>
+          <button class="lb-tab" data-cat="allTime" onclick="switchLeaderboardTab('allTime')">&#x1F451; All Time</button>
+        </div>
+
+        <!-- Leaderboard list -->
+        <div class="leaderboard-list" id="leaderboardList">
+          <div class="lb-loading">Loading...</div>
+        </div>
+
+        <!-- User's position -->
+        <div class="leaderboard-user hidden" id="leaderboardUser"></div>
+
+        <!-- Controls -->
+        <div class="leaderboard-controls">
+          <span class="lb-sync-time" id="lbSyncTime">Last sync: --</span>
+          <button class="lb-settings-btn" onclick="openLeaderboardSettings()">&#x2699;</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Model Switcher -->
     <div class="section" id="modelSwitcherSection">
@@ -198,47 +239,6 @@
     <div class="section tip-trigger" id="tip-allprojects" data-tip-title="" data-tip="">
       <div class="section-title" id="sec-allprojects">All Claude Projects</div>
       <div id="allProjectsContainer"></div>
-    </div>
-
-    <!-- Cloud Leaderboard -->
-    <div class="section" id="leaderboardSection">
-      <div class="section-title">
-        Cloud Leaderboard
-        <span class="leaderboard-badge" id="leaderboardStatus">OFF</span>
-      </div>
-
-      <!-- Opt-in prompt (shown when not enabled) -->
-      <div id="leaderboardOptIn" class="leaderboard-optin">
-        <div class="optin-icon">&#x1F3C6;</div>
-        <div class="optin-title">Join the Community Leaderboard</div>
-        <div class="optin-desc">Compare your Claude usage with other developers. Your data is anonymous.</div>
-        <button class="optin-btn" onclick="openLeaderboardSetup()">Enable Leaderboard</button>
-      </div>
-
-      <!-- Leaderboard content (shown when enabled) -->
-      <div id="leaderboardContent" style="display:none;">
-        <!-- Category tabs -->
-        <div class="leaderboard-tabs">
-          <button class="lb-tab active" data-cat="today" onclick="switchLeaderboardTab('today')">Today</button>
-          <button class="lb-tab" data-cat="weekly" onclick="switchLeaderboardTab('weekly')">Weekly</button>
-          <button class="lb-tab" data-cat="monthly" onclick="switchLeaderboardTab('monthly')">Monthly $</button>
-          <button class="lb-tab" data-cat="allTime" onclick="switchLeaderboardTab('allTime')">All Time</button>
-        </div>
-
-        <!-- Leaderboard list -->
-        <div class="leaderboard-list" id="leaderboardList">
-          <div class="lb-loading">Loading...</div>
-        </div>
-
-        <!-- User's position -->
-        <div class="leaderboard-user hidden" id="leaderboardUser"></div>
-
-        <!-- Controls -->
-        <div class="leaderboard-controls">
-          <span class="lb-sync-time" id="lbSyncTime">Last sync: --</span>
-          <button class="lb-settings-btn" onclick="openLeaderboardSettings()">&#x2699;</button>
-        </div>
-      </div>
     </div>
 
     <!-- Quick Links -->
