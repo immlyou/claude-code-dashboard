@@ -1024,6 +1024,384 @@ async function switchModel(model) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Cloud Leaderboard System
+// ═══════════════════════════════════════════════════════════════════════════
+
+let leaderboardSettings = {
+  enabled: false,
+  nickname: '',
+  userId: null,
+  privacy: { shareToday: true, shareWeekly: true, shareMonthly: true, shareAllTime: true }
+};
+let leaderboardData = {};
+let currentLeaderboardTab = 'today';
+let firebaseInitialized = false;
+let firebaseDb = null;
+
+async function initLeaderboard() {
+  try {
+    leaderboardSettings = await window.api.getLeaderboardSettings();
+    updateLeaderboardUI();
+
+    if (leaderboardSettings.enabled && leaderboardSettings.userId) {
+      await initFirebase();
+      refreshLeaderboard();
+    }
+  } catch (e) {
+    console.error('Failed to init leaderboard:', e);
+  }
+}
+
+async function initFirebase() {
+  if (firebaseInitialized) return;
+
+  try {
+    const config = window.FIREBASE_CONFIG;
+    if (!config || config.apiKey === 'YOUR_API_KEY') {
+      console.warn('Firebase not configured');
+      return;
+    }
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(config);
+    }
+
+    firebaseDb = firebase.database();
+
+    // Anonymous auth
+    await firebase.auth().signInAnonymously();
+    firebaseInitialized = true;
+    console.log('Firebase initialized');
+  } catch (e) {
+    console.error('Firebase init error:', e);
+  }
+}
+
+function updateLeaderboardUI() {
+  const badge = document.getElementById('leaderboardStatus');
+  const optIn = document.getElementById('leaderboardOptIn');
+  const content = document.getElementById('leaderboardContent');
+
+  if (leaderboardSettings.enabled) {
+    badge.textContent = 'ON';
+    badge.classList.add('on');
+    optIn.style.display = 'none';
+    content.style.display = 'block';
+  } else {
+    badge.textContent = 'OFF';
+    badge.classList.remove('on');
+    optIn.style.display = 'block';
+    content.style.display = 'none';
+  }
+}
+
+function openLeaderboardSetup() {
+  const modal = createLeaderboardModal(true);
+  document.body.appendChild(modal);
+  setTimeout(() => modal.classList.add('visible'), 10);
+}
+
+function openLeaderboardSettings() {
+  const modal = createLeaderboardModal(false);
+  document.body.appendChild(modal);
+  setTimeout(() => modal.classList.add('visible'), 10);
+}
+
+function createLeaderboardModal(isSetup) {
+  const overlay = document.createElement('div');
+  overlay.className = 'lb-modal-overlay';
+  overlay.id = 'leaderboardModal';
+
+  const p = leaderboardSettings.privacy;
+
+  overlay.innerHTML = `
+    <div class="lb-modal">
+      <div class="lb-modal-title">${isSetup ? 'Join Leaderboard' : 'Leaderboard Settings'}</div>
+
+      <div class="lb-form-group">
+        <label class="lb-form-label">Nickname</label>
+        <input type="text" class="lb-form-input" id="lbNickname"
+               value="${escHtml(leaderboardSettings.nickname)}"
+               placeholder="Enter a nickname (3-20 chars)" maxlength="20">
+      </div>
+
+      <div class="lb-form-group">
+        <label class="lb-form-label">Privacy - Choose what to share</label>
+        <div class="lb-privacy-toggles">
+          <div class="lb-toggle-row">
+            <span class="lb-toggle-label">Today's tokens</span>
+            <div class="lb-toggle ${p.shareToday ? 'on' : ''}" data-key="shareToday"></div>
+          </div>
+          <div class="lb-toggle-row">
+            <span class="lb-toggle-label">Weekly tokens</span>
+            <div class="lb-toggle ${p.shareWeekly ? 'on' : ''}" data-key="shareWeekly"></div>
+          </div>
+          <div class="lb-toggle-row">
+            <span class="lb-toggle-label">Monthly cost</span>
+            <div class="lb-toggle ${p.shareMonthly ? 'on' : ''}" data-key="shareMonthly"></div>
+          </div>
+          <div class="lb-toggle-row">
+            <span class="lb-toggle-label">All-time tokens</span>
+            <div class="lb-toggle ${p.shareAllTime ? 'on' : ''}" data-key="shareAllTime"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="lb-modal-actions">
+        <button class="lb-modal-btn cancel" onclick="closeLeaderboardModal()">Cancel</button>
+        ${!isSetup ? '<button class="lb-modal-btn danger" onclick="disableLeaderboard()">Disable</button>' : ''}
+        <button class="lb-modal-btn save" onclick="saveLeaderboardSettings(${isSetup})">${isSetup ? 'Join' : 'Save'}</button>
+      </div>
+    </div>
+  `;
+
+  // Toggle handlers
+  overlay.querySelectorAll('.lb-toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => toggle.classList.toggle('on'));
+  });
+
+  // Click outside to close
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeLeaderboardModal();
+  });
+
+  return overlay;
+}
+
+function closeLeaderboardModal() {
+  const modal = document.getElementById('leaderboardModal');
+  if (modal) {
+    modal.classList.remove('visible');
+    setTimeout(() => modal.remove(), 200);
+  }
+}
+
+async function saveLeaderboardSettings(isSetup) {
+  const nicknameInput = document.getElementById('lbNickname');
+  const nickname = (nicknameInput.value || '').trim();
+
+  if (nickname.length < 3 || nickname.length > 20) {
+    nicknameInput.style.borderColor = 'var(--red)';
+    return;
+  }
+
+  // Collect privacy settings
+  const privacy = {};
+  document.querySelectorAll('.lb-toggle').forEach(toggle => {
+    privacy[toggle.dataset.key] = toggle.classList.contains('on');
+  });
+
+  // Generate user ID if needed
+  let userId = leaderboardSettings.userId;
+  if (!userId) {
+    userId = await window.api.generateUserId();
+  }
+
+  // Save settings
+  leaderboardSettings = {
+    enabled: true,
+    nickname,
+    userId,
+    privacy
+  };
+
+  await window.api.setLeaderboardSettings(leaderboardSettings);
+
+  closeLeaderboardModal();
+  updateLeaderboardUI();
+
+  // Initialize Firebase and push initial data
+  await initFirebase();
+  await pushLeaderboardStats();
+  refreshLeaderboard();
+}
+
+async function disableLeaderboard() {
+  leaderboardSettings.enabled = false;
+  await window.api.setLeaderboardSettings(leaderboardSettings);
+
+  closeLeaderboardModal();
+  updateLeaderboardUI();
+}
+
+function switchLeaderboardTab(category) {
+  currentLeaderboardTab = category;
+  document.querySelectorAll('.lb-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.cat === category);
+  });
+  renderLeaderboard();
+}
+
+async function refreshLeaderboard() {
+  if (!firebaseInitialized || !leaderboardSettings.enabled) return;
+
+  const listEl = document.getElementById('leaderboardList');
+  listEl.innerHTML = '<div class="lb-loading">Loading...</div>';
+
+  try {
+    const categories = ['today', 'weekly', 'monthly', 'allTime'];
+
+    for (const cat of categories) {
+      const snapshot = await firebaseDb.ref(`leaderboards/${cat}`).orderByChild('score').limitToLast(10).once('value');
+      const data = snapshot.val() || {};
+
+      // Convert to sorted array (descending)
+      leaderboardData[cat] = Object.entries(data)
+        .map(([id, val]) => ({ id, ...val }))
+        .sort((a, b) => b.score - a.score);
+    }
+
+    renderLeaderboard();
+
+    // Update sync time
+    document.getElementById('lbSyncTime').textContent = 'Last sync: ' + new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  } catch (e) {
+    console.error('Failed to fetch leaderboard:', e);
+    listEl.innerHTML = '<div class="lb-empty">Failed to load leaderboard</div>';
+  }
+}
+
+function renderLeaderboard() {
+  const listEl = document.getElementById('leaderboardList');
+  const userEl = document.getElementById('leaderboardUser');
+  const data = leaderboardData[currentLeaderboardTab] || [];
+
+  if (data.length === 0) {
+    listEl.innerHTML = '<div class="lb-empty">No data yet. Be the first!</div>';
+    userEl.classList.add('hidden');
+    return;
+  }
+
+  const isMonthly = currentLeaderboardTab === 'monthly';
+  const userId = leaderboardSettings.userId;
+  let userInTop10 = false;
+
+  let html = '';
+  data.slice(0, 10).forEach((entry, i) => {
+    const rank = i + 1;
+    const isMe = entry.id === userId;
+    if (isMe) userInTop10 = true;
+
+    const topClass = rank <= 3 ? ` top-${rank}` : '';
+    const meClass = isMe ? ' me' : '';
+    const scoreDisplay = isMonthly ? formatCost(entry.score) : formatTokens(entry.score);
+
+    html += `
+      <div class="lb-row${topClass}${meClass}">
+        <div class="lb-rank">${rank}</div>
+        <div class="lb-info">
+          <div class="lb-nickname">${escHtml(entry.nickname || 'Anonymous')}</div>
+        </div>
+        <div class="lb-score">${scoreDisplay}</div>
+      </div>
+    `;
+  });
+
+  listEl.innerHTML = html;
+
+  // Show user position if not in top 10
+  if (!userInTop10 && userId) {
+    // Find user's position
+    const userEntry = data.find(e => e.id === userId);
+    if (userEntry) {
+      const userRank = data.findIndex(e => e.id === userId) + 1;
+      const scoreDisplay = isMonthly ? formatCost(userEntry.score) : formatTokens(userEntry.score);
+      userEl.innerHTML = `
+        <div class="lb-rank">${userRank}</div>
+        <div class="lb-info">
+          <div class="lb-nickname">${escHtml(userEntry.nickname)}</div>
+        </div>
+        <div class="lb-score">${scoreDisplay}</div>
+      `;
+      userEl.classList.remove('hidden');
+    } else {
+      userEl.classList.add('hidden');
+    }
+  } else {
+    userEl.classList.add('hidden');
+  }
+}
+
+async function pushLeaderboardStats() {
+  if (!firebaseInitialized || !leaderboardSettings.enabled || !lastDashboardData) return;
+
+  const userId = leaderboardSettings.userId;
+  const nickname = leaderboardSettings.nickname;
+  const privacy = leaderboardSettings.privacy;
+  const d = lastDashboardData;
+
+  try {
+    const updates = {};
+    const now = Date.now();
+
+    // Update user profile
+    updates[`users/${userId}/nickname`] = nickname;
+    updates[`users/${userId}/lastSeen`] = now;
+
+    // Push stats based on privacy settings
+    if (privacy.shareToday && d.today) {
+      updates[`leaderboards/today/${userId}`] = {
+        nickname,
+        score: d.today.tokens || 0,
+        updatedAt: now
+      };
+      updates[`stats/${userId}/today`] = {
+        tokens: d.today.tokens || 0,
+        messages: d.today.messages || 0,
+        date: new Date().toISOString().slice(0, 10)
+      };
+    }
+
+    if (privacy.shareWeekly && d.weekly) {
+      updates[`leaderboards/weekly/${userId}`] = {
+        nickname,
+        score: d.weekly.tokens || 0,
+        updatedAt: now
+      };
+      updates[`stats/${userId}/weekly`] = {
+        tokens: d.weekly.tokens || 0,
+        weekStart: getWeekStart()
+      };
+    }
+
+    if (privacy.shareMonthly && d.monthly) {
+      updates[`leaderboards/monthly/${userId}`] = {
+        nickname,
+        score: d.monthly.cost || 0,
+        updatedAt: now
+      };
+      updates[`stats/${userId}/monthly`] = {
+        cost: d.monthly.cost || 0,
+        monthStart: new Date().toISOString().slice(0, 7)
+      };
+    }
+
+    if (privacy.shareAllTime && d.aggregate) {
+      updates[`leaderboards/allTime/${userId}`] = {
+        nickname,
+        score: d.aggregate.totalTokens || 0,
+        updatedAt: now
+      };
+      updates[`stats/${userId}/allTime`] = {
+        tokens: d.aggregate.totalTokens || 0
+      };
+    }
+
+    await firebaseDb.ref().update(updates);
+    console.log('Leaderboard stats pushed');
+  } catch (e) {
+    console.error('Failed to push leaderboard stats:', e);
+  }
+}
+
+function getWeekStart() {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(now.setDate(diff)).toISOString().slice(0, 10);
+}
+
 // ── Main refresh ──
 async function refresh() {
   try {
@@ -1096,3 +1474,17 @@ window._refreshTimer = setInterval(refresh, refreshInterval);
 // Fetch plan usage on startup (after splash)
 setTimeout(() => fetchPlanUsage(), 6000);
 setInterval(() => fetchPlanUsage(), 300000);
+
+// ── Cloud Leaderboard ──
+// Initialize after splash
+setTimeout(() => initLeaderboard(), 6500);
+
+// Refresh leaderboard every 1 minute
+setInterval(() => {
+  if (leaderboardSettings.enabled) refreshLeaderboard();
+}, 60000);
+
+// Push stats every 5 minutes
+setInterval(() => {
+  if (leaderboardSettings.enabled && lastDashboardData) pushLeaderboardStats();
+}, 300000);

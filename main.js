@@ -214,6 +214,43 @@ if (!gotLock) {
       }
     });
 
+    // ── Cloud Leaderboard System ──
+    const crypto = require('crypto');
+
+    ipcMain.handle('get-leaderboard-settings', async () => {
+      const settings = loadSettings();
+      return settings.leaderboard || {
+        enabled: false,
+        nickname: '',
+        userId: null,
+        privacy: {
+          shareToday: true,
+          shareWeekly: true,
+          shareMonthly: true,
+          shareAllTime: true
+        }
+      };
+    });
+
+    ipcMain.handle('set-leaderboard-settings', async (_, leaderboardSettings) => {
+      const settings = loadSettings();
+      settings.leaderboard = { ...settings.leaderboard, ...leaderboardSettings };
+      saveSettings(settings);
+      return { ok: true };
+    });
+
+    ipcMain.handle('generate-user-id', async () => {
+      const settings = loadSettings();
+      if (!settings.leaderboard?.userId) {
+        const machineId = os.hostname() + os.userInfo().username + Date.now();
+        const userId = crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 20);
+        settings.leaderboard = settings.leaderboard || {};
+        settings.leaderboard.userId = userId;
+        saveSettings(settings);
+      }
+      return settings.leaderboard.userId;
+    });
+
     // ── Plan Usage Scraper ──
     let scraperWin = null;
     let scrapeResolved = false;

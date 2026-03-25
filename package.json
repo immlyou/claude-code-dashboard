@@ -1,6 +1,6 @@
 {
   "name": "claude-code-dashboard",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "main": "main.js",
   "author": "imchris",
   "license": "ISC",
@@ -26,8 +26,16 @@
     "dmg": {
       "title": "Claude Code Dashboard",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "files": [
@@ -43,6 +51,7 @@
     }
   },
   "dependencies": {
+    "firebase": "^12.11.0",
     "menubar": "^9.5.2"
   },
   "devDependencies": {
