@@ -2,6 +2,11 @@
 
 let lastDashboardData = null;
 let refreshInterval = 3000;
+let currentView = 'overview';
+let selectedSessionPid = null;
+let selectedProjectName = null;
+let projectFilter = '';
+let budgetSettings = loadBudgetSettings();
 
 // ── Utility functions ──
 
@@ -38,6 +43,161 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function formatDateTime(ts) {
+  if (!ts) return '—';
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return escHtml(String(ts));
+  return date.toLocaleString('zh-TW', { hour12: false });
+}
+
+function formatPct(value) {
+  if (!Number.isFinite(value)) return '0%';
+  return Math.round(value) + '%';
+}
+
+function loadBudgetSettings() {
+  try {
+    return {
+      tokens: Number(localStorage.getItem('dashboard-budget-tokens')) || 0,
+      cost: Number(localStorage.getItem('dashboard-budget-cost')) || 0,
+    };
+  } catch (_) {
+    return { tokens: 0, cost: 0 };
+  }
+}
+
+function syncBudgetInputs() {
+  const tokenInput = document.getElementById('tokenBudgetInput');
+  const costInput = document.getElementById('costBudgetInput');
+  if (tokenInput) tokenInput.value = budgetSettings.tokens || '';
+  if (costInput) costInput.value = budgetSettings.cost || '';
+}
+
+function saveBudgetSettings() {
+  const tokenInput = document.getElementById('tokenBudgetInput');
+  const costInput = document.getElementById('costBudgetInput');
+  budgetSettings = {
+    tokens: Math.max(0, Number(tokenInput?.value) || 0),
+    cost: Math.max(0, Number(costInput?.value) || 0),
+  };
+  localStorage.setItem('dashboard-budget-tokens', String(budgetSettings.tokens));
+  localStorage.setItem('dashboard-budget-cost', String(budgetSettings.cost));
+  if (lastDashboardData) {
+    renderOverviewHero(lastDashboardData);
+    renderActionCenter(lastDashboardData);
+  }
+}
+
+function getProjectionMultiplier() {
+  const now = new Date();
+  const secondsElapsed = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  const dayRatio = Math.min(1, Math.max(secondsElapsed / 86400, 0.08));
+  return 1 / dayRatio;
+}
+
+function getForecast(data) {
+  const projectionMultiplier = getProjectionMultiplier();
+  const projectedTokens = Math.round((data.today?.tokens || 0) * projectionMultiplier);
+  const projectedCost = (data.today?.cost || 0) * projectionMultiplier;
+  const recentTokenDays = (data.dailyTokenHistory || []).slice(-7).map(d => d.tokens || 0);
+  const recentMessageDays = (data.dailyHistory || []).slice(-7).map(d => d.messages || 0);
+  const avgRecentTokens = recentTokenDays.length
+    ? Math.round(recentTokenDays.reduce((sum, n) => sum + n, 0) / recentTokenDays.length)
+    : 0;
+  const avgRecentMessages = recentMessageDays.length
+    ? Math.round(recentMessageDays.reduce((sum, n) => sum + n, 0) / recentMessageDays.length)
+    : 0;
+  return {
+    projectedTokens,
+    projectedCost,
+    avgRecentTokens,
+    avgRecentMessages,
+    projectionMultiplier,
+  };
+}
+
+function getActionItems(data) {
+  const items = [];
+  const forecast = getForecast(data);
+  const planLimits = planUsageCache?.limits || [];
+  const hottestLimit = planLimits.slice().sort((a, b) => b.pct - a.pct)[0];
+  const activeSessions = (data.sessions || []).filter(s => s.alive);
+  const heaviestSession = activeSessions.slice().sort((a, b) => (b.outputTokens || 0) - (a.outputTokens || 0))[0];
+
+  if (budgetSettings.tokens > 0) {
+    const pct = (forecast.projectedTokens / budgetSettings.tokens) * 100;
+    if (pct >= 100) {
+      items.push({
+        level: 'danger',
+        icon: '!',
+        title: 'Projected to exceed token budget',
+        text: `${formatTokens(forecast.projectedTokens)} projected today vs ${formatTokens(budgetSettings.tokens)} target.`,
+      });
+    } else if (pct >= 80) {
+      items.push({
+        level: 'warn',
+        icon: '↗',
+        title: 'Token budget running hot',
+        text: `${formatPct(pct)} of today budget projected. Consider switching to Sonnet or Haiku for lighter work.`,
+      });
+    }
+  }
+
+  if (budgetSettings.cost > 0) {
+    const pct = (forecast.projectedCost / budgetSettings.cost) * 100;
+    if (pct >= 100) {
+      items.push({
+        level: 'danger',
+        icon: '$',
+        title: 'Projected to exceed cost budget',
+        text: `${formatCost(forecast.projectedCost)} projected today vs ${formatCost(budgetSettings.cost)} budget.`,
+      });
+    } else if (pct >= 80) {
+      items.push({
+        level: 'warn',
+        icon: '$',
+        title: 'Cost budget approaching limit',
+        text: `${formatPct(pct)} of daily spend budget projected by end of day.`,
+      });
+    }
+  }
+
+  if (hottestLimit) {
+    const descriptor = hottestLimit.pct >= 90 ? 'danger' : hottestLimit.pct >= 75 ? 'warn' : 'info';
+    if (hottestLimit.pct >= 75) {
+      items.push({
+        level: descriptor,
+        icon: '%',
+        title: `${hottestLimit.label} nearing limit`,
+        text: `${hottestLimit.pct}% used${hottestLimit.reset ? `, ${hottestLimit.reset}` : ''}.`,
+      });
+    }
+  }
+
+  if (heaviestSession) {
+    const avgOutputPerMessage = heaviestSession.messageCount > 0
+      ? Math.round((heaviestSession.outputTokens || 0) / heaviestSession.messageCount)
+      : 0;
+    items.push({
+      level: 'info',
+      icon: '•',
+      title: `Focus session: ${heaviestSession.project}`,
+      text: `${formatTokens(heaviestSession.outputTokens)} output tokens across ${heaviestSession.messageCount} messages (${formatTokens(avgOutputPerMessage)} per prompt).`,
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      level: 'info',
+      icon: '✓',
+      title: 'Usage looks healthy',
+      text: `Projected ${formatTokens(forecast.projectedTokens)} tokens today with ${activeSessions.length} active session${activeSessions.length === 1 ? '' : 's'}.`,
+    });
+  }
+
+  return items.slice(0, 4);
+}
+
 // ── Trend comparison helper (Item 11) ──
 
 function trendBadge(current, previous) {
@@ -59,6 +219,16 @@ function getWeekData(dailyHistory, offset) {
     tokens: slice.reduce((s, d) => s + (d.tokens || 0), 0),
     sessions: slice.reduce((s, d) => s + (d.sessions || 0), 0),
   };
+}
+
+function switchView(view) {
+  currentView = view;
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.view === view);
+  });
+  document.querySelectorAll('.view-pane').forEach(pane => {
+    pane.classList.toggle('active', pane.dataset.pane === view);
+  });
 }
 
 // ── Render functions ──
@@ -88,19 +258,24 @@ function renderSessions(sessions) {
 
   if (sessions.length === 0) {
     container.innerHTML = '<div class="empty-state">No CLI sessions detected</div>';
+    renderSessionDetail([]);
     return;
   }
 
   const allSessions = [...active, ...dead];
   const maxOut = Math.max(...allSessions.map(s => s.outputTokens), 1);
+  if (!selectedSessionPid || !allSessions.some(s => s.pid === selectedSessionPid)) {
+    selectedSessionPid = (active[0] || allSessions[0]).pid;
+  }
 
   let rows = '';
   for (const s of allSessions) {
     const barPct = Math.max(5, (s.outputTokens / maxOut) * 100);
     const deadClass = s.alive ? '' : ' dead';
     const modelLabel = shortModel(s.model);
+    const selectedClass = s.pid === selectedSessionPid ? ' selected' : '';
     rows += `
-      <div class="session-row${deadClass}">
+      <div class="session-row${deadClass}${selectedClass}" onclick="selectSession(${s.pid})">
         <div class="bar-bg" style="width:${barPct}%"></div>
         <span class="status-dot ${s.alive ? 'active' : 'dead'}"></span>
         <span class="session-project" title="${escHtml(s.cwd)}">${escHtml(s.project)}</span>
@@ -113,6 +288,70 @@ function renderSessions(sessions) {
       </div>`;
   }
   container.innerHTML = `<div class="session-list">${rows}</div>`;
+  renderSessionDetail(allSessions);
+}
+
+function selectSession(pid) {
+  selectedSessionPid = pid;
+  if (lastDashboardData) renderSessions(lastDashboardData.sessions || []);
+}
+
+function renderSessionDetail(sessions) {
+  const container = document.getElementById('sessionDetailCard');
+  if (!container) return;
+  const session = (sessions || []).find(s => s.pid === selectedSessionPid) || sessions[0];
+  if (!session) {
+    container.innerHTML = '<div class="empty-state">Select a session to inspect its usage profile</div>';
+    return;
+  }
+
+  const avgOutput = session.messageCount > 0 ? Math.round((session.outputTokens || 0) / session.messageCount) : 0;
+  const totalInput = (session.inputTokens || 0) + (session.cacheRead || 0);
+  const cacheRate = totalInput > 0 ? Math.round(((session.cacheRead || 0) / totalInput) * 100) : 0;
+  const statusClass = session.alive ? 'good' : 'dead';
+
+  container.innerHTML = `
+    <div class="detail-card">
+      <div class="detail-header">
+        <div>
+          <div class="detail-title">${escHtml(session.project)}</div>
+          <div class="detail-subtitle">${escHtml(session.cwd)}</div>
+        </div>
+        <span class="detail-badge ${statusClass}">${session.alive ? 'Live' : 'Ended'}</span>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-stat">
+          <div class="detail-stat-label">Model</div>
+          <div class="detail-stat-value">${escHtml(shortModel(session.model))}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Uptime</div>
+          <div class="detail-stat-value">${formatDuration(session.uptime)}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Output / Msg</div>
+          <div class="detail-stat-value">${formatTokens(avgOutput)}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Cache Hit</div>
+          <div class="detail-stat-value">${cacheRate}%</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Started</div>
+          <div class="detail-stat-value">${formatDateTime(session.startedAt)}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Last Activity</div>
+          <div class="detail-stat-value">${formatDateTime(session.lastActivity)}</div>
+        </div>
+      </div>
+      <div class="detail-tags">
+        <span class="detail-tag">${formatTokens(session.inputTokens || 0)} input</span>
+        <span class="detail-tag">${formatTokens(session.outputTokens || 0)} output</span>
+        <span class="detail-tag">${formatTokens(session.cacheRead || 0)} cache read</span>
+        <span class="detail-tag">${session.toolCallCount || 0} tools</span>
+      </div>
+    </div>`;
 }
 
 function renderCompare(data) {
@@ -210,6 +449,70 @@ function renderCompare(data) {
         </div>
       </div>`;
   }
+}
+
+function renderOverviewHero(data) {
+  const container = document.getElementById('overviewHero');
+  const projectContainer = document.getElementById('projectInsightGrid');
+  if (!container || !projectContainer) return;
+
+  const forecast = getForecast(data);
+  const activeSessions = (data.sessions || []).filter(s => s.alive).length;
+  const topProject = (data.allProjects || []).slice().sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0))[0];
+  const topCostProject = (data.projectStats || []).slice().sort((a, b) => (b.cost || 0) - (a.cost || 0))[0];
+
+  container.innerHTML = `
+    <div class="hero-card primary">
+      <div class="hero-label">Projected Today</div>
+      <div class="hero-value">${formatTokens(forecast.projectedTokens)}</div>
+      <div class="hero-sub">${formatCost(forecast.projectedCost)} projected by end of day</div>
+    </div>
+    <div class="hero-card">
+      <div class="hero-label">Active Sessions</div>
+      <div class="hero-inline">
+        <div class="hero-value">${activeSessions}</div>
+        <div class="section-meta-badge">${(data.sessions || []).length} tracked</div>
+      </div>
+      <div class="hero-sub">${data.today.messages.toLocaleString()} messages so far today</div>
+    </div>
+    <div class="hero-card">
+      <div class="hero-label">7 Day Baseline</div>
+      <div class="hero-value">${formatTokens(forecast.avgRecentTokens)}</div>
+      <div class="hero-sub">${forecast.avgRecentMessages.toLocaleString()} avg messages per day</div>
+    </div>
+    <div class="hero-card">
+      <div class="hero-label">Budget Status</div>
+      <div class="hero-value">${budgetSettings.tokens > 0 ? formatPct((forecast.projectedTokens / budgetSettings.tokens) * 100) : 'Off'}</div>
+      <div class="hero-sub">${budgetSettings.cost > 0 ? `${formatCost(forecast.projectedCost)} / ${formatCost(budgetSettings.cost)}` : 'Set a budget in Settings to enable alerts'}</div>
+    </div>
+  `;
+
+  projectContainer.innerHTML = `
+    <div class="hero-card primary">
+      <div class="hero-label">Most Active Project</div>
+      <div class="hero-value">${escHtml(topProject?.name || '—')}</div>
+      <div class="hero-sub">${topProject ? `${formatTokens(topProject.totalTokens)} total tokens across ${topProject.sessionCount} sessions` : 'No project data yet'}</div>
+    </div>
+    <div class="hero-card">
+      <div class="hero-label">Highest Spend Snapshot</div>
+      <div class="hero-value">${topCostProject ? formatCost(topCostProject.cost) : '—'}</div>
+      <div class="hero-sub">${escHtml(topCostProject?.name || 'No recent cost snapshot')}</div>
+    </div>
+  `;
+}
+
+function renderActionCenter(data) {
+  const container = document.getElementById('actionCenter');
+  if (!container) return;
+  const items = getActionItems(data);
+  container.innerHTML = `<div class="risk-list">${items.map(item => `
+    <div class="risk-card ${item.level}">
+      <div class="risk-icon">${item.icon}</div>
+      <div class="risk-body">
+        <div class="risk-title">${escHtml(item.title)}</div>
+        <div class="risk-text">${escHtml(item.text)}</div>
+      </div>
+    </div>`).join('')}</div>`;
 }
 
 function renderEfficiency(eff) {
@@ -347,7 +650,7 @@ function renderAllTime(aggregate) {
     <div class="usage-card">
       <div class="title">Total Messages</div>
       <div class="value color-cyan">${aggregate.totalMessages.toLocaleString()}</div>
-      <div class="sub">${aggregate.totalSessions} sessions</div>
+      <div class="sub">${aggregate.totalSessions} sessions · ${formatTokens(aggregate.totalTokens || 0)} tokens</div>
     </div>
     <div class="usage-card">
       <div class="title">Est. Total Cost</div>
@@ -462,6 +765,10 @@ async function fetchPlanUsage() {
     const data = await window.api.fetchPlanUsage();
     planUsageCache = data;
     renderPlanUsage(data);
+    if (lastDashboardData) {
+      renderOverviewHero(lastDashboardData);
+      renderActionCenter(lastDashboardData);
+    }
   } catch (e) {
     container.innerHTML = '<div class="plan-login-hint">Failed to load usage data.</div>';
   }
@@ -633,9 +940,13 @@ function renderProjects(projectStats) {
   const container = document.getElementById('projectTable');
   if (!projectStats || projectStats.length === 0) {
     container.innerHTML = '<div class="empty-state">No project data</div>';
+    renderProjectDetail();
     return;
   }
   const top = projectStats.slice(0, 10);
+  if (!selectedProjectName || !top.some(p => p.name === selectedProjectName)) {
+    selectedProjectName = top[0].name;
+  }
   let rows = `
     <div class="project-table-row header">
       <span class="proj-name">Project</span>
@@ -643,14 +954,16 @@ function renderProjects(projectStats) {
       <span class="proj-lines">+/-</span>
     </div>`;
   for (const p of top) {
+    const selectedClass = p.name === selectedProjectName ? ' selected' : '';
     rows += `
-      <div class="project-table-row">
+      <div class="project-table-row${selectedClass}" onclick="selectProject('${escHtml(p.name).replace(/'/g, '&#39;')}')">
         <span class="proj-name" title="${escHtml(p.name)}">${escHtml(p.name)}</span>
         <span class="proj-cost">${formatCost(p.cost)}</span>
         <span class="proj-lines"><span class="added">+${p.linesAdded.toLocaleString()}</span> <span class="removed">-${p.linesRemoved.toLocaleString()}</span></span>
       </div>`;
   }
   container.innerHTML = `<div class="project-table">${rows}</div>`;
+  renderProjectDetail();
 }
 
 function renderDesktop(desktopInfo) {
@@ -684,6 +997,12 @@ function renderAllProjects(allProjects) {
     container.innerHTML = '<div class="empty-state">No projects found</div>';
     return;
   }
+  const filteredProjects = (allProjects || []).filter(p => {
+    if (!projectFilter) return true;
+    const haystack = `${p.name} ${p.path}`.toLowerCase();
+    return haystack.includes(projectFilter);
+  });
+  const projectsToShow = filteredProjects;
   let rows = `
     <div class="ap-row header">
       <span style="width:7px"></span>
@@ -692,9 +1011,10 @@ function renderAllProjects(allProjects) {
       <span class="ap-stat">Msgs</span>
       <span class="ap-stat">Tokens</span>
     </div>`;
-  for (const p of allProjects) {
+  for (const p of projectsToShow) {
+    const selectedClass = p.name === selectedProjectName ? ' selected' : '';
     rows += `
-    <div class="ap-row" title="${escHtml(p.path)}">
+    <div class="ap-row${selectedClass}" title="${escHtml(p.path)}" onclick="selectProject('${escHtml(p.name).replace(/'/g, '&#39;')}')">
       <span class="ap-exists ${p.exists ? 'yes' : 'no'}"></span>
       <span class="ap-name">${escHtml(p.name)}</span>
       <span class="ap-stat accent">${p.sessionCount}</span>
@@ -704,8 +1024,81 @@ function renderAllProjects(allProjects) {
   }
   container.innerHTML = `
     <div class="all-projects-wrap">${rows}</div>
-    <div class="ap-count">${allProjects.length} projects · ${allProjects.filter(p => p.exists).length} active</div>
+    <div class="ap-count">${projectsToShow.length} shown · ${allProjects.filter(p => p.exists).length} active on disk</div>
   `;
+}
+
+function decodeInlineArg(value) {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = value;
+  return textarea.value;
+}
+
+function selectProject(name) {
+  selectedProjectName = decodeInlineArg(name);
+  renderProjects(lastDashboardData?.projectStats || []);
+  renderAllProjects(lastDashboardData?.allProjects || []);
+}
+
+function filterProjects(value) {
+  projectFilter = String(value || '').trim().toLowerCase();
+  renderAllProjects(lastDashboardData?.allProjects || []);
+}
+
+function renderProjectDetail() {
+  const container = document.getElementById('projectDetailCard');
+  if (!container) return;
+
+  const snapshot = (lastDashboardData?.projectStats || []).find(p => p.name === selectedProjectName);
+  const aggregate = (lastDashboardData?.allProjects || []).find(p => p.name === selectedProjectName);
+  const project = aggregate || snapshot;
+
+  if (!project) {
+    container.innerHTML = '<div class="empty-state">Select a project to view its recent activity</div>';
+    return;
+  }
+
+  const models = aggregate?.models?.length ? aggregate.models.join(', ') : 'No model list';
+  container.innerHTML = `
+    <div class="detail-card">
+      <div class="detail-header">
+        <div>
+          <div class="detail-title">${escHtml(project.name)}</div>
+          <div class="detail-subtitle">${escHtml(aggregate?.path || 'Recent snapshot only')}</div>
+        </div>
+        <span class="detail-badge ${aggregate?.exists ? 'good' : 'warn'}">${aggregate?.exists ? 'Active repo' : 'Archived / moved'}</span>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-stat">
+          <div class="detail-stat-label">Sessions</div>
+          <div class="detail-stat-value">${aggregate?.sessionCount ?? '—'}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Messages</div>
+          <div class="detail-stat-value">${aggregate?.messageCount?.toLocaleString?.() ?? '—'}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Total Tokens</div>
+          <div class="detail-stat-value">${aggregate ? formatTokens(aggregate.totalTokens) : '—'}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Last Cost Snapshot</div>
+          <div class="detail-stat-value">${snapshot ? formatCost(snapshot.cost) : '—'}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Lines Added / Removed</div>
+          <div class="detail-stat-value">${snapshot ? `+${snapshot.linesAdded} / -${snapshot.linesRemoved}` : '—'}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Last Activity</div>
+          <div class="detail-stat-value">${formatDateTime(aggregate?.lastActivity)}</div>
+        </div>
+      </div>
+      <div class="detail-tags">
+        <span class="detail-tag">${models}</span>
+        ${snapshot ? `<span class="detail-tag">${snapshot.webSearches || 0} web searches</span>` : ''}
+      </div>
+    </div>`;
 }
 
 // ── i18n system ──
@@ -799,7 +1192,11 @@ function applyLang() {
 
 // ── Changelog ──
 const CHANGELOG = [
-  { ver: '3.0.0', date: '2026-03-22', latest: true, changes: {
+  { ver: '3.5.0', date: '2026-03-31', latest: true, changes: {
+    'zh-TW': ['重新整理資訊架構，加入 Overview / Sessions / Projects / Insights / Community 分頁', '新增 Action Center，提供配額風險、預算預測與焦點 session 建議', '新增 session 與 project 詳情卡，可快速檢視單一工作負載', '新增每日 token / cost budget alerts', '將 leaderboard 移到獨立 Community 分頁，降低主畫面干擾'],
+    'en': ['Restructured the app into Overview / Sessions / Projects / Insights / Community tabs', 'Added an Action Center with quota risk, budget projection, and focus-session guidance', 'Added drill-down detail cards for sessions and projects', 'Added daily token and cost budget alerts', 'Moved the leaderboard into a separate lower-priority Community tab'],
+  }},
+  { ver: '3.0.0', date: '2026-03-22', changes: {
     'zh-TW': ['重構：CSS/JS/HTML 拆分為獨立檔案', '改善成本估算精度（每模型獨立計價）', '新增週趨勢比較面板', '新增 CSV 匯出格式', '修復大檔案統計遺漏問題', '新增錯誤追蹤面板', 'CLI 版本同步 Electron 功能', '可設定自動刷新間隔', 'Widget 資料增強', 'i18n 翻譯覆蓋率驗證', 'Plan Usage scraper 加速與容錯'],
     'en': ['Refactor: Split CSS/JS/HTML into separate files', 'Improved cost estimation accuracy (per-model pricing)', 'Added weekly trend comparison panel', 'Added CSV export format', 'Fixed large file statistics truncation', 'Added error tracking panel', 'CLI version synced with Electron features', 'Configurable auto-refresh interval', 'Enhanced widget data', 'i18n translation coverage verification', 'Plan Usage scraper speed & error handling improved'],
   }},
@@ -845,6 +1242,7 @@ function openSettings() {
   renderLangList();
   renderChangelog();
   loadRefreshSetting();
+  syncBudgetInputs();
   document.getElementById('settingsOverlay').classList.add('open');
 }
 
@@ -860,6 +1258,7 @@ async function loadRefreshSetting() {
     const sel = document.getElementById('refreshSelect');
     if (sel) sel.value = String(refreshInterval);
   } catch (_) {}
+  syncBudgetInputs();
 }
 
 async function changeRefreshInterval(val) {
@@ -936,7 +1335,7 @@ function exportJSON() {
   if (!lastDashboardData) return;
   const exportObj = {
     exportedAt: new Date().toISOString(),
-    version: '3.0.0',
+    version: '3.5.0',
     account: {
       name: lastDashboardData.account?.name,
       email: lastDashboardData.account?.email,
@@ -1464,8 +1863,12 @@ function getWeekStart() {
 async function refresh() {
   try {
     const data = await window.api.getDashboardData();
+    data.weekly = getWeekData(data.dailyTokenHistory, 0);
+    data.monthly = data.month;
     lastDashboardData = data;
     renderErrors(data.errors);
+    renderOverviewHero(data);
+    renderActionCenter(data);
     renderAccount(data.account);
     renderSessions(data.sessions);
     renderCompare(data);
@@ -1479,6 +1882,7 @@ async function refresh() {
     renderProjects(data.projectStats);
     renderDesktop(data.desktopInfo);
     renderAllProjects(data.allProjects);
+    renderProjectDetail();
     const refreshEl = document.getElementById('refreshTime');
     if (refreshEl) refreshEl.textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false });
 
@@ -1520,10 +1924,12 @@ setTimeout(() => {
 // ── Initial load + auto-refresh ──
 loadLocales().then(() => {
   applyLang();
+  switchView(currentView);
   refresh();
 });
 loadCurrentModel();
 loadRefreshSetting();
+syncBudgetInputs();
 window._refreshTimer = setInterval(refresh, refreshInterval);
 
 // Dynamic version

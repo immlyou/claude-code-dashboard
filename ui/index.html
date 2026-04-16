@@ -16,7 +16,7 @@
   <div id="splashScreen">
     <div class="splash-logo">C</div>
     <div class="splash-title">Claude Code Dashboard</div>
-    <div class="splash-version app-version">v3.4.3</div>
+    <div class="splash-version app-version">v3.5.0</div>
     <div class="splash-copyright">
       &copy; 2026 imchris. All rights reserved.<br>
       Built for macOS menu bar monitoring.
@@ -29,6 +29,7 @@
       <h1>Claude Code Dashboard</h1>
     </div>
     <div class="header-right">
+      <span class="refresh-time" id="refreshTime">--:--:--</span>
       <div class="export-dropdown">
         <button class="export-btn" onclick="toggleExportMenu()" title="Export data">Export</button>
         <div class="export-menu" id="exportMenu">
@@ -67,10 +68,22 @@
         </div>
       </div>
       <div class="settings-section">
+        <div class="settings-section-title">Daily Budget Alerts</div>
+        <div class="budget-setting">
+          <label for="tokenBudgetInput">Token budget</label>
+          <input id="tokenBudgetInput" type="number" min="0" step="1000" placeholder="e.g. 500000" onchange="saveBudgetSettings()">
+        </div>
+        <div class="budget-setting">
+          <label for="costBudgetInput">Cost budget ($)</label>
+          <input id="costBudgetInput" type="number" min="0" step="0.5" placeholder="e.g. 20" onchange="saveBudgetSettings()">
+        </div>
+        <div class="settings-help">Used by the action center and forecast alerts.</div>
+      </div>
+      <div class="settings-section">
         <div class="settings-section-title" id="aboutSectionTitle">About</div>
         <div style="margin-bottom:10px;">
           <span style="font-size:13px;font-weight:600;">Claude Code Dashboard</span>
-          <span class="app-version" style="font-size:11px;color:var(--text-secondary);margin-left:6px;">v3.4.3</span>
+          <span class="app-version" style="font-size:11px;color:var(--text-secondary);margin-left:6px;">v3.5.0</span>
         </div>
         <div class="changelog-list" id="changelogList"></div>
       </div>
@@ -80,187 +93,212 @@
   <!-- Floating tooltip -->
   <div id="tooltip"></div>
 
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="overview" onclick="switchView('overview')">Overview</button>
+    <button class="view-tab" data-view="sessions" onclick="switchView('sessions')">Sessions</button>
+    <button class="view-tab" data-view="projects" onclick="switchView('projects')">Projects</button>
+    <button class="view-tab" data-view="insights" onclick="switchView('insights')">Insights</button>
+    <button class="view-tab" data-view="community" onclick="switchView('community')">Community</button>
+  </div>
+
   <div class="content">
     <!-- Error banner (Item 6) -->
     <div id="errorBanner" class="error-banner" style="display:none;"></div>
 
-    <!-- Cloud Leaderboard (moved to top) -->
-    <div class="section" id="leaderboardSection">
-      <div class="section-title">
-        &#x1F3C6; Cloud Leaderboard
-        <span class="leaderboard-badge" id="leaderboardStatus">OFF</span>
+    <div class="view-pane active" data-pane="overview">
+      <div class="section">
+        <div class="section-title">Today at a Glance</div>
+        <div id="overviewHero" class="overview-hero-grid"></div>
       </div>
 
-      <!-- Opt-in prompt (shown when not enabled) -->
-      <div id="leaderboardOptIn" class="leaderboard-optin">
-        <div class="optin-icon">&#x1F525;</div>
-        <div class="optin-title">Join the Community Leaderboard</div>
-        <div class="optin-desc">Compare your Claude usage with other developers worldwide. Anonymous &amp; opt-in.</div>
-        <button class="optin-btn" onclick="openLeaderboardSetup()">Enable Leaderboard</button>
+      <div class="section">
+        <div class="section-title">Action Center</div>
+        <div id="actionCenter"></div>
       </div>
 
-      <!-- Leaderboard content (shown when enabled) -->
-      <div id="leaderboardContent" style="display:none;">
-        <!-- Category tabs -->
-        <div class="leaderboard-tabs">
-          <button class="lb-tab active" data-cat="today" onclick="switchLeaderboardTab('today')">&#x26A1; Today</button>
-          <button class="lb-tab" data-cat="weekly" onclick="switchLeaderboardTab('weekly')">&#x1F4C5; Weekly</button>
-          <button class="lb-tab" data-cat="monthly" onclick="switchLeaderboardTab('monthly')">&#x1F4B0; Monthly $</button>
-          <button class="lb-tab" data-cat="allTime" onclick="switchLeaderboardTab('allTime')">&#x1F451; All Time</button>
-        </div>
-
-        <!-- Leaderboard list -->
-        <div class="leaderboard-list" id="leaderboardList">
-          <div class="lb-loading">Loading...</div>
-        </div>
-
-        <!-- User's position -->
-        <div class="leaderboard-user hidden" id="leaderboardUser"></div>
-
-        <!-- Controls -->
-        <div class="leaderboard-controls">
-          <span class="lb-sync-time" id="lbSyncTime">Last sync: --</span>
-          <button class="lb-settings-btn" onclick="openLeaderboardSettings()">&#x2699;</button>
+      <div class="section" id="modelSwitcherSection">
+        <div class="section-title" id="sec-model-switch">Default Model</div>
+        <div class="model-switcher">
+          <button class="model-btn" data-model="opus" onclick="switchModel('opus')">
+            <span class="model-icon">O</span>
+            <span class="model-name">Opus</span>
+          </button>
+          <button class="model-btn" data-model="sonnet" onclick="switchModel('sonnet')">
+            <span class="model-icon">S</span>
+            <span class="model-name">Sonnet</span>
+          </button>
+          <button class="model-btn" data-model="haiku" onclick="switchModel('haiku')">
+            <span class="model-icon">H</span>
+            <span class="model-name">Haiku</span>
+          </button>
         </div>
       </div>
-    </div>
 
-    <!-- Model Switcher -->
-    <div class="section" id="modelSwitcherSection">
-      <div class="section-title" id="sec-model-switch">Default Model</div>
-      <div class="model-switcher">
-        <button class="model-btn" data-model="opus" onclick="switchModel('opus')">
-          <span class="model-icon">O</span>
-          <span class="model-name">Opus</span>
-        </button>
-        <button class="model-btn" data-model="sonnet" onclick="switchModel('sonnet')">
-          <span class="model-icon">S</span>
-          <span class="model-name">Sonnet</span>
-        </button>
-        <button class="model-btn" data-model="haiku" onclick="switchModel('haiku')">
-          <span class="model-icon">H</span>
-          <span class="model-name">Haiku</span>
-        </button>
+      <div class="section tip-trigger" id="tip-plan" data-tip-title="Plan Usage" data-tip="Shows your Claude subscription usage limits scraped from claude.ai.">
+        <div class="section-title" id="sec-plan">Plan Usage</div>
+        <div id="planUsageContainer">
+          <div class="plan-login-hint" id="planLoginHint">Loading usage data...</div>
+        </div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-account" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-account">Claude Max Account</div>
+        <div id="accountCard" class="account-card"></div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-compare" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-compare">Usage Comparison</div>
+        <div id="compareContainer" class="compare-grid"></div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-efficiency" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-efficiency">Efficiency</div>
+        <div id="efficiencyContainer" class="efficiency-strip"></div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-progress" data-tip-title="" data-tip="">
+        <div id="usageProgressContainer"></div>
       </div>
     </div>
 
-    <!-- Plan Usage Limits -->
-    <div class="section tip-trigger" id="tip-plan" data-tip-title="Plan Usage" data-tip="Shows your Claude subscription usage limits scraped from claude.ai.">
-      <div class="section-title" id="sec-plan">Plan Usage</div>
-      <div id="planUsageContainer">
-        <div class="plan-login-hint" id="planLoginHint">Loading usage data...</div>
+    <div class="view-pane" data-pane="sessions">
+      <div class="section tip-trigger" id="tip-sessions" data-tip-title="" data-tip="">
+        <div class="section-title with-meta">
+          <span id="sec-sessions">Active Sessions</span>
+          <span id="activeCount" class="section-meta-badge">0 active</span>
+        </div>
+        <div id="sessionsContainer"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Session Detail</div>
+        <div id="sessionDetailCard"></div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-desktop" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-desktop">Claude Desktop</div>
+        <div id="desktopCard"></div>
       </div>
     </div>
 
-    <!-- Claude Max Account -->
-    <div class="section tip-trigger" id="tip-account" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-account">Claude Max Account</div>
-      <div id="accountCard" class="account-card"></div>
-    </div>
+    <div class="view-pane" data-pane="projects">
+      <div class="section">
+        <div class="section-title">Project Spotlight</div>
+        <div id="projectInsightGrid" class="overview-hero-grid"></div>
+      </div>
 
-    <!-- Active Sessions -->
-    <div class="section tip-trigger" id="tip-sessions" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-sessions">Active Sessions</div>
-      <div id="sessionsContainer"></div>
-    </div>
+      <div class="section tip-trigger" id="tip-projects" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-projects">Project Breakdown</div>
+        <div id="projectTable"></div>
+      </div>
 
-    <!-- Today vs Month comparison -->
-    <div class="section tip-trigger" id="tip-compare" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-compare">Usage Comparison</div>
-      <div id="compareContainer" class="compare-grid"></div>
-    </div>
+      <div class="section">
+        <div class="section-title">Project Detail</div>
+        <div id="projectDetailCard"></div>
+      </div>
 
-    <!-- Weekly Trend (Item 11) -->
-    <div class="section tip-trigger" id="tip-trend" data-tip-title="Weekly Trend" data-tip="Compares this week's usage with last week. Badges show percentage change: green=decrease, red=increase.">
-      <div class="section-title" id="sec-trend">Weekly Trend</div>
-      <div id="weeklyTrendContainer"></div>
-    </div>
-
-    <!-- Efficiency metrics -->
-    <div class="section tip-trigger" id="tip-efficiency" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-efficiency">Efficiency</div>
-      <div id="efficiencyContainer" class="efficiency-strip"></div>
-    </div>
-
-    <!-- Today usage intensity bar -->
-    <div class="section tip-trigger" id="tip-progress" data-tip-title="" data-tip="">
-      <div id="usageProgressContainer"></div>
-    </div>
-
-    <!-- Token + Message chart -->
-    <div class="section tip-trigger" id="tip-chart" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-chart">Daily Activity (14d)</div>
-      <div class="chart-wrap">
-        <div class="chart-legend" id="chartLegend"></div>
-        <div class="chart-bars" id="tokenChart"></div>
+      <div class="section tip-trigger" id="tip-allprojects" data-tip-title="" data-tip="">
+        <div class="section-title with-meta">
+          <span id="sec-allprojects">All Claude Projects</span>
+          <input id="projectSearchInput" class="project-search" type="search" placeholder="Filter projects..." oninput="filterProjects(this.value)">
+        </div>
+        <div id="allProjectsContainer"></div>
       </div>
     </div>
 
-    <!-- Model usage bar chart -->
-    <div class="section tip-trigger" id="tip-model" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-model">Model Usage</div>
-      <div class="model-card" id="modelCard"></div>
-    </div>
+    <div class="view-pane" data-pane="insights">
+      <div class="section tip-trigger" id="tip-trend" data-tip-title="Weekly Trend" data-tip="Compares this week's usage with last week. Badges show percentage change: green=decrease, red=increase.">
+        <div class="section-title" id="sec-trend">Weekly Trend</div>
+        <div id="weeklyTrendContainer"></div>
+      </div>
 
-    <!-- All time stats -->
-    <div class="section tip-trigger" id="tip-alltime" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-alltime">All Time</div>
-      <div class="usage-grid" id="allTimeGrid"></div>
-    </div>
+      <div class="section tip-trigger" id="tip-chart" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-chart">Daily Activity (14d)</div>
+        <div class="chart-wrap">
+          <div class="chart-legend" id="chartLegend"></div>
+          <div class="chart-bars" id="tokenChart"></div>
+        </div>
+      </div>
 
-    <!-- Activity by Hour -->
-    <div class="section tip-trigger" id="tip-heatmap" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-heatmap">Activity by Hour</div>
-      <div class="heatmap-wrap">
-        <div class="heatmap-grid" id="heatmapGrid"></div>
-        <div class="heatmap-labels" id="heatmapLabels"></div>
+      <div class="section tip-trigger" id="tip-model" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-model">Model Usage</div>
+        <div class="model-card" id="modelCard"></div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-alltime" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-alltime">All Time</div>
+        <div class="usage-grid" id="allTimeGrid"></div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-heatmap" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-heatmap">Activity by Hour</div>
+        <div class="heatmap-wrap">
+          <div class="heatmap-grid" id="heatmapGrid"></div>
+          <div class="heatmap-labels" id="heatmapLabels"></div>
+        </div>
+      </div>
+
+      <div class="section tip-trigger" id="tip-records" data-tip-title="" data-tip="">
+        <div class="section-title" id="sec-records">Records & Stats</div>
+        <div class="records-grid" id="recordsGrid"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title" id="sec-links">Quick Links</div>
+        <div class="footer-links">
+          <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/billing')">
+            <span class="icon">&#x1F4B3;</span>
+            Billing
+          </button>
+          <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/usage')">
+            <span class="icon">&#x1F4CA;</span>
+            Usage Dashboard
+          </button>
+          <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/plans')">
+            <span class="icon">&#x26A1;</span>
+            Plans
+          </button>
+          <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/keys')">
+            <span class="icon">&#x1F511;</span>
+            API Keys
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Records -->
-    <div class="section tip-trigger" id="tip-records" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-records">Records & Stats</div>
-      <div class="records-grid" id="recordsGrid"></div>
-    </div>
+    <div class="view-pane" data-pane="community">
+      <div class="section leaderboard-shell" id="leaderboardSection">
+        <div class="section-title with-meta">
+          <span>&#x1F3C6; Cloud Leaderboard</span>
+          <span class="leaderboard-badge" id="leaderboardStatus">OFF</span>
+        </div>
 
-    <!-- Project Breakdown -->
-    <div class="section tip-trigger" id="tip-projects" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-projects">Project Breakdown</div>
-      <div id="projectTable"></div>
-    </div>
+        <div id="leaderboardOptIn" class="leaderboard-optin">
+          <div class="optin-icon">&#x1F525;</div>
+          <div class="optin-title">Join the Community Leaderboard</div>
+          <div class="optin-desc">Compare your Claude usage with other developers worldwide. Anonymous &amp; opt-in.</div>
+          <button class="optin-btn" onclick="openLeaderboardSetup()">Enable Leaderboard</button>
+        </div>
 
-    <!-- Claude Desktop -->
-    <div class="section tip-trigger" id="tip-desktop" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-desktop">Claude Desktop</div>
-      <div id="desktopCard"></div>
-    </div>
+        <div id="leaderboardContent" style="display:none;">
+          <div class="leaderboard-tabs">
+            <button class="lb-tab active" data-cat="today" onclick="switchLeaderboardTab('today')">&#x26A1; Today</button>
+            <button class="lb-tab" data-cat="weekly" onclick="switchLeaderboardTab('weekly')">&#x1F4C5; Weekly</button>
+            <button class="lb-tab" data-cat="monthly" onclick="switchLeaderboardTab('monthly')">&#x1F4B0; Monthly $</button>
+            <button class="lb-tab" data-cat="allTime" onclick="switchLeaderboardTab('allTime')">&#x1F451; All Time</button>
+          </div>
 
-    <!-- All Projects -->
-    <div class="section tip-trigger" id="tip-allprojects" data-tip-title="" data-tip="">
-      <div class="section-title" id="sec-allprojects">All Claude Projects</div>
-      <div id="allProjectsContainer"></div>
-    </div>
+          <div class="leaderboard-list" id="leaderboardList">
+            <div class="lb-loading">Loading...</div>
+          </div>
 
-    <!-- Quick Links -->
-    <div class="section">
-      <div class="section-title" id="sec-links">Quick Links</div>
-      <div class="footer-links">
-        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/billing')">
-          <span class="icon">&#x1F4B3;</span>
-          Billing
-        </button>
-        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/usage')">
-          <span class="icon">&#x1F4CA;</span>
-          Usage Dashboard
-        </button>
-        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/plans')">
-          <span class="icon">&#x26A1;</span>
-          Plans
-        </button>
-        <button class="console-btn" onclick="openConsole('https://console.anthropic.com/settings/keys')">
-          <span class="icon">&#x1F511;</span>
-          API Keys
-        </button>
+          <div class="leaderboard-user hidden" id="leaderboardUser"></div>
+
+          <div class="leaderboard-controls">
+            <span class="lb-sync-time" id="lbSyncTime">Last sync: --</span>
+            <button class="lb-settings-btn" onclick="openLeaderboardSettings()">&#x2699;</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
