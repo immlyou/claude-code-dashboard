@@ -514,6 +514,7 @@ function collect() {
     aggregate: {
       totalSessions: stats.totalSessions || 0,
       totalMessages: stats.totalMessages || 0,
+      totalTokens: totalInput + totalOutput + totalCacheRead + totalCacheCreation,
       costEstimate,
       modelUsage: stats.modelUsage || {},
     },
