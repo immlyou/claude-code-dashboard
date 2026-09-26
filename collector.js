@@ -30,6 +30,10 @@ let projectsCacheTime = 0;
 const fileStatsCache = new Map();
 const PROJECTS_CACHE_TTL = 30000; // 30 seconds
 
+// Cache for the merged per-LOCAL-date buckets built alongside scanAllProjects.
+// Map<date, { messageCount, toolCallCount, tokensByModel, hourCounts, sessionIds: Set<string> }>
+let dateBucketsCache = new Map();
+
 function readJSON(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
   catch { return null; }
@@ -42,6 +46,14 @@ function isPidRunning(pid) {
 
 function getProjectDirName(cwd) {
   return cwd.replace(/\//g, '-');
+}
+
+// Format a Date using the machine's LOCAL timezone as YYYY-MM-DD (never UTC).
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function getSessionTokens(sessionId, cwd) {
@@ -89,6 +101,22 @@ function scanFileForStats(filePath) {
   let lastActivity = null;
   const models = new Set();
 
+  // Per-LOCAL-date buckets: date -> { messageCount, toolCallCount, tokensByModel, hourCounts }
+  const dailyBuckets = {};
+  function getBucket(date) {
+    let b = dailyBuckets[date];
+    if (!b) {
+      b = { messageCount: 0, toolCallCount: 0, tokensByModel: {}, hourCounts: new Array(24).fill(0) };
+      dailyBuckets[date] = b;
+    }
+    return b;
+  }
+
+  // Dedup assistant messages by message.id(+requestId): streaming/log replay can write
+  // the same assistant message (and its usage + tool_use blocks) more than once.
+  const seenAssistantKeys = new Set();
+  const seenToolUseIds = new Set();
+
   // Full scan — results are cached by mtime in scanAllProjects, so this only runs once per file change
   const content = fs.readFileSync(filePath, 'utf-8');
 
@@ -96,26 +124,74 @@ function scanFileForStats(filePath) {
   for (const line of lines) {
     try {
       const entry = JSON.parse(line);
-      if (entry.type === 'user') messageCount++;
-      if (entry.type === 'assistant' && entry.message?.usage) {
-        const u = entry.message.usage;
-        totalInput += u.input_tokens || 0;
-        totalOutput += u.output_tokens || 0;
-        totalCacheRead += u.cache_read_input_tokens || 0;
-        if (entry.message?.model) models.add(entry.message.model);
-      }
-      if (entry.message?.content && Array.isArray(entry.message.content)) {
-        for (const block of entry.message.content) {
-          if (block.type === 'tool_use') toolCallCount++;
+
+      let entryDate = null, entryHour = null;
+      if (entry.timestamp) {
+        const d = new Date(entry.timestamp);
+        if (!isNaN(d.getTime())) {
+          entryDate = localDateStr(d);
+          entryHour = d.getHours();
         }
       }
+
+      if (entry.type === 'user') {
+        messageCount++;
+        if (entryDate) {
+          const b = getBucket(entryDate);
+          b.messageCount++;
+          if (entryHour !== null) b.hourCounts[entryHour]++;
+        }
+      }
+
+      let isDuplicateAssistant = false;
+      if (entry.type === 'assistant' && entry.message?.id) {
+        const key = entry.message.id + '|' + (entry.requestId || '');
+        if (seenAssistantKeys.has(key)) isDuplicateAssistant = true;
+        else seenAssistantKeys.add(key);
+      }
+
+      if (entry.type === 'assistant' && entry.message?.usage && !isDuplicateAssistant) {
+        const u = entry.message.usage;
+        const inputT = u.input_tokens || 0;
+        const outputT = u.output_tokens || 0;
+        const cacheReadT = u.cache_read_input_tokens || 0;
+        const cacheCreationT = u.cache_creation_input_tokens || 0;
+        totalInput += inputT;
+        totalOutput += outputT;
+        totalCacheRead += cacheReadT;
+        if (entry.message?.model) models.add(entry.message.model);
+        if (entryDate) {
+          const b = getBucket(entryDate);
+          const model = entry.message.model || 'unknown';
+          b.tokensByModel[model] = (b.tokensByModel[model] || 0) + inputT + outputT + cacheReadT + cacheCreationT;
+        }
+      }
+
+      // A single assistant turn is often split across lines sharing message.id (thinking / text /
+      // tool_use), so dedup tool calls per block id rather than per message.
+      if (entry.message?.content && Array.isArray(entry.message.content)) {
+        let toolsInEntry = 0;
+        for (const block of entry.message.content) {
+          if (block.type !== 'tool_use') continue;
+          if (block.id) {
+            if (seenToolUseIds.has(block.id)) continue;
+            seenToolUseIds.add(block.id);
+          }
+          toolsInEntry++;
+        }
+        if (toolsInEntry > 0) {
+          toolCallCount += toolsInEntry;
+          if (entryDate) getBucket(entryDate).toolCallCount += toolsInEntry;
+        }
+      }
+
       if (entry.timestamp && (!lastActivity || entry.timestamp > lastActivity)) {
         lastActivity = entry.timestamp;
       }
     } catch { /* skip bad line */ }
   }
 
-  return { totalInput, totalOutput, totalCacheRead, messageCount, toolCallCount, lastActivity, models: [...models], bytesScanned: content.length };
+  return { totalInput, totalOutput, totalCacheRead, messageCount, toolCallCount, lastActivity, models: [...models], bytesScanned: content.length, dailyBuckets };
 }
 
 function scanAllProjects() {
@@ -125,6 +201,25 @@ function scanAllProjects() {
   }
 
   const projects = [];
+  const freshDateBuckets = new Map();
+
+  function mergeFileBucketsIntoDate(sessionId, fileDailyBuckets) {
+    for (const [date, bucket] of Object.entries(fileDailyBuckets || {})) {
+      let agg = freshDateBuckets.get(date);
+      if (!agg) {
+        agg = { messageCount: 0, toolCallCount: 0, tokensByModel: {}, hourCounts: new Array(24).fill(0), sessionIds: new Set() };
+        freshDateBuckets.set(date, agg);
+      }
+      agg.messageCount += bucket.messageCount;
+      agg.toolCallCount += bucket.toolCallCount;
+      agg.sessionIds.add(sessionId);
+      for (let h = 0; h < 24; h++) agg.hourCounts[h] += bucket.hourCounts[h];
+      for (const [model, tok] of Object.entries(bucket.tokensByModel)) {
+        agg.tokensByModel[model] = (agg.tokensByModel[model] || 0) + tok;
+      }
+    }
+  }
+
   try {
     const dirs = fs.readdirSync(PROJECTS_DIR);
     for (const dir of dirs) {
@@ -170,6 +265,7 @@ function scanAllProjects() {
             if (fileStats.lastActivity && (!lastActivity || fileStats.lastActivity > lastActivity)) {
               lastActivity = fileStats.lastActivity;
             }
+            mergeFileBucketsIntoDate(path.basename(f, '.jsonl'), fileStats.dailyBuckets);
           } catch { /* skip unreadable file */ }
         }
       } catch { /* skip unreadable dir */ }
@@ -202,7 +298,15 @@ function scanAllProjects() {
 
   projectsCache = projects;
   projectsCacheTime = now;
+  dateBucketsCache = freshDateBuckets;
   return projects;
+}
+
+// Ensures scanAllProjects() has run within its TTL (which also populates dateBucketsCache),
+// then returns the merged per-LOCAL-date buckets built from ~/.claude/projects/*.jsonl.
+function getDateBuckets() {
+  scanAllProjects();
+  return dateBucketsCache;
 }
 
 function collect() {
@@ -267,21 +371,58 @@ function collect() {
   let stats = {};
   try { stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8')); }
   catch(e) { errors.push({ source: 'statsReading', message: e.message }); }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr(new Date());
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const todayActivity = (stats.dailyActivity || []).find(d => d.date === today) || {};
-  const todayTokenEntry = (stats.dailyModelTokens || []).find(d => d.date === today);
+  // Date-based stats (today/month/history) come from the JSONL conversation logs, which are
+  // the real source of truth — stats-cache.json can go stale (its collector may stop running).
+  // Merge rule: for a given date, prefer the JSONL-derived bucket when present, else fall back
+  // to the stats-cache entry for that date.
+  let dateBuckets = new Map();
+  try { dateBuckets = getDateBuckets(); }
+  catch(e) { errors.push({ source: 'dateBuckets', message: e.message }); }
+
+  const cacheDailyActivityByDate = new Map((stats.dailyActivity || []).map(d => [d.date, d]));
+  const cacheDailyTokensByDate = new Map((stats.dailyModelTokens || []).map(d => [d.date, d]));
+  const allKnownDates = new Set([
+    ...cacheDailyActivityByDate.keys(),
+    ...cacheDailyTokensByDate.keys(),
+    ...dateBuckets.keys(),
+  ]);
+  const sortedDates = [...allKnownDates].sort();
+
+  const mergedDailyActivity = [];
+  const mergedDailyModelTokens = [];
+  for (const date of sortedDates) {
+    const jsonlBucket = dateBuckets.get(date);
+    if (jsonlBucket) {
+      mergedDailyActivity.push({
+        date,
+        messageCount: jsonlBucket.messageCount,
+        sessionCount: jsonlBucket.sessionIds.size,
+        toolCallCount: jsonlBucket.toolCallCount,
+      });
+      mergedDailyModelTokens.push({ date, tokensByModel: jsonlBucket.tokensByModel });
+    } else {
+      const cacheAct = cacheDailyActivityByDate.get(date);
+      if (cacheAct) mergedDailyActivity.push(cacheAct);
+      const cacheTok = cacheDailyTokensByDate.get(date);
+      if (cacheTok) mergedDailyModelTokens.push(cacheTok);
+    }
+  }
+
+  const todayActivity = mergedDailyActivity.find(d => d.date === today) || {};
+  const todayTokenEntry = mergedDailyModelTokens.find(d => d.date === today);
   let todayTokens = 0;
   if (todayTokenEntry?.tokensByModel) {
     todayTokens = Object.values(todayTokenEntry.tokensByModel).reduce((a, b) => a + b, 0);
   }
 
-  const thisMonthTokens = (stats.dailyModelTokens || [])
+  const thisMonthTokens = mergedDailyModelTokens
     .filter(d => d.date.startsWith(monthStart))
     .reduce((sum, d) => sum + Object.values(d.tokensByModel || {}).reduce((a, b) => a + b, 0), 0);
-  const thisMonthMessages = (stats.dailyActivity || [])
+  const thisMonthMessages = mergedDailyActivity
     .filter(d => d.date.startsWith(monthStart))
     .reduce((sum, d) => sum + d.messageCount, 0);
 
@@ -301,13 +442,13 @@ function collect() {
   }
 
   // Daily history (last 14 days)
-  const dailyHistory = (stats.dailyActivity || []).slice(-14).map(d => ({
+  const dailyHistory = mergedDailyActivity.slice(-14).map(d => ({
     date: d.date,
     messages: d.messageCount,
     sessions: d.sessionCount,
     tools: d.toolCallCount,
   }));
-  const dailyTokenHistory = (stats.dailyModelTokens || []).slice(-14).map(d => ({
+  const dailyTokenHistory = mergedDailyModelTokens.slice(-14).map(d => ({
     date: d.date,
     tokens: Object.values(d.tokensByModel || {}).reduce((a, b) => a + b, 0),
   }));
@@ -320,7 +461,7 @@ function collect() {
   const passesInfo = passesCache[orgUuid] || {};
 
   // Calculate daily usage intensity (% of your historical average)
-  const allDailyTokens = (stats.dailyModelTokens || []).map(d =>
+  const allDailyTokens = mergedDailyModelTokens.map(d =>
     Object.values(d.tokensByModel || {}).reduce((a, b) => a + b, 0)
   );
   const avgDailyTokens = allDailyTokens.length > 0
@@ -366,7 +507,7 @@ function collect() {
 
   // Month cost estimate (per-model with assumed token type split)
   let monthCost = 0;
-  for (const d of (stats.dailyModelTokens || []).filter(d => d.date.startsWith(monthStart))) {
+  for (const d of mergedDailyModelTokens.filter(d => d.date.startsWith(monthStart))) {
     for (const [modelName, tokens] of Object.entries(d.tokensByModel || {})) {
       const [pIn, pOut, pCR, pCW] = getModelPricing(modelName);
       monthCost +=
@@ -383,20 +524,20 @@ function collect() {
   const cacheHitRate = (totalInput + totalCacheRead) > 0
     ? Math.round((totalCacheRead / (totalInput + totalCacheRead)) * 100)
     : 0;
-  const totalTools = (stats.dailyActivity || []).reduce((s, d) => s + (d.toolCallCount || 0), 0);
+  const totalTools = mergedDailyActivity.reduce((s, d) => s + (d.toolCallCount || 0), 0);
   const toolsPerMsg = totalMsgs > 0 ? (totalTools / totalMsgs).toFixed(1) : '0';
 
   // Daily message history for dual chart
-  const dailyMsgHistory = (stats.dailyActivity || []).slice(-14).map(d => ({
+  const dailyMsgHistory = mergedDailyActivity.slice(-14).map(d => ({
     date: d.date,
     messages: d.messageCount || 0,
   }));
 
   // Month sessions and tools
-  const thisMonthSessions = (stats.dailyActivity || [])
+  const thisMonthSessions = mergedDailyActivity
     .filter(d => d.date.startsWith(monthStart))
     .reduce((sum, d) => sum + (d.sessionCount || 0), 0);
-  const thisMonthTools = (stats.dailyActivity || [])
+  const thisMonthTools = mergedDailyActivity
     .filter(d => d.date.startsWith(monthStart))
     .reduce((sum, d) => sum + (d.toolCallCount || 0), 0);
 
@@ -414,6 +555,15 @@ function collect() {
     hourCounts = new Array(24).fill(0);
   }
 
+  // Fold in JSONL-derived hour counts for dates after stats-cache's lastComputedDate — those
+  // dates can't already be represented in stats.hourCounts, so this can't double count them.
+  const lastComputedDate = stats.lastComputedDate || '';
+  for (const [date, bucket] of dateBuckets) {
+    if (!lastComputedDate || date > lastComputedDate) {
+      for (let h = 0; h < 24; h++) hourCounts[h] += bucket.hourCounts[h];
+    }
+  }
+
   // Weekday x Hour heatmap (7 days x 24 hours)
   // weekdayHourCounts[dayOfWeek][hour] where 0=Sunday, 6=Saturday
   const weekdayHourCounts = Array.from({ length: 7 }, () => new Array(24).fill(0));
@@ -428,7 +578,7 @@ function collect() {
     // Derive from dailyActivity: for each day entry, figure out the day-of-week
     // and distribute its message count across hours proportional to hourCounts
     const totalHourActivity = hourCounts.reduce((a, b) => a + b, 0) || 1;
-    for (const d of (stats.dailyActivity || [])) {
+    for (const d of mergedDailyActivity) {
       const dayDate = new Date(d.date + 'T12:00:00');
       const dow = dayDate.getDay(); // 0=Sunday
       const msgs = d.messageCount || 0;
