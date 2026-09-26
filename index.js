@@ -29,6 +29,40 @@ function getProjectName(cwd) {
   return path.basename(cwd) || cwd;
 }
 
+function formatCount(n) {
+  if (n >= 10_000) return Math.round(n / 1000) + 'K';
+  if (n >= 1_000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+// Text bar chart: each day gets a fixed-width column with a value row and a day-of-month label row
+function renderBarChart(days, width, height) {
+  const COL = 6;
+  const BLOCKS = ' ▁▂▃▄▅▆▇█';
+  const shown = days.slice(-Math.max(1, Math.floor(width / COL)));
+  if (shown.length === 0) return '{center}No data{/center}';
+
+  // Too short for bars: fall back to a "day:count" list
+  if (height < 3) {
+    return days.slice().reverse().map(d => `${d.date.slice(8)}:${formatCount(d.messages)}`).join(' ');
+  }
+
+  const barRows = height - 2;
+  const max = Math.max(1, ...shown.map(d => d.messages));
+  const cell = s => s.padEnd(COL).slice(0, COL);
+  const lines = [];
+  for (let row = barRows - 1; row >= 0; row--) {
+    lines.push(shown.map(d => {
+      const eighths = Math.round((d.messages / max) * barRows * 8) - row * 8;
+      const ch = BLOCKS[Math.max(0, Math.min(8, eighths))];
+      return `{blue-fg}${cell(ch.repeat(3))}{/}`;
+    }).join(''));
+  }
+  lines.push(shown.map(d => cell(formatCount(d.messages))).join(''));
+  lines.push(shown.map(d => `{gray-fg}${cell(`${+d.date.slice(5, 7)}/${+d.date.slice(8)}`)}{/}`).join(''));
+  return lines.join('\n');
+}
+
 // ─── UI Setup ────────────────────────────────────────────────────────
 
 const screen = blessed.screen({
@@ -41,7 +75,7 @@ const grid = new contrib.grid({ rows: 12, cols: 12, screen });
 
 // Title bar
 const titleBox = grid.set(0, 0, 1, 12, blessed.box, {
-  content: '{center}{bold} ⚡ CLAUDE CODE CLI DASHBOARD{/bold}{/center}',
+  content: '{center}{bold}CLAUDE CODE CLI DASHBOARD{/bold}{/center}',
   tags: true,
   style: {
     fg: 'white',
@@ -116,7 +150,7 @@ const efficiencyBox = grid.set(5, 9, 2, 3, blessed.box, {
 
 // Token Usage Sparkline (last 14 days)
 const tokenSpark = grid.set(7, 0, 2, 6, contrib.sparkline, {
-  label: ' 📈 Daily Token Usage (14d) ',
+  label: ' 📈 Daily Token Usage (last 14 active days) ',
   tags: true,
   border: { type: 'line', fg: 'cyan' },
   style: {
@@ -138,14 +172,13 @@ const modelBox = grid.set(7, 6, 2, 6, blessed.box, {
 });
 
 // Activity Log (Messages per day bar)
-const activityBar = grid.set(9, 0, 2, 6, contrib.bar, {
-  label: ' 📊 Daily Messages (14d) ',
-  barWidth: 6,
-  barSpacing: 1,
-  xOffset: 0,
-  maxHeight: 9,
+// Plain text box: contrib.bar mixes braille-dot and column units, so bars overflow/vanish
+const activityBar = grid.set(9, 0, 2, 6, blessed.box, {
+  label: ' 📊 Daily Messages (last 14 active days) ',
+  tags: true,
   border: { type: 'line', fg: 'cyan' },
   style: {
+    fg: 'white',
     border: { fg: 'cyan' },
   },
 });
@@ -198,7 +231,7 @@ function updateDashboard() {
   const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
   const aliveCount = data.sessions.filter(s => s.alive).length;
   titleBox.setContent(
-    `{center}{bold} ⚡ CLAUDE CODE CLI DASHBOARD  |  ${timeStr}  |  ` +
+    `{center}{bold}CLAUDE CODE CLI DASHBOARD  |  ${timeStr}  |  ` +
     `${aliveCount} active sessions{/bold}{/center}`
   );
 
@@ -206,7 +239,8 @@ function updateDashboard() {
   const tableData = data.sessions.map(s => [
     String(s.pid),
     getProjectName(s.cwd),
-    s.alive ? '{green-fg}● ACTIVE{/}' : '{red-fg}○ DEAD{/}',
+    // contrib.table measures width with stripAnsi, so use ANSI codes (blessed tags would be truncated)
+    s.alive ? '\x1b[32m● ACTIVE\x1b[39m' : '\x1b[31m○ DEAD\x1b[39m',
     formatDuration(s.uptime),
     formatTokens(s.inputTokens + s.cacheRead),
     formatTokens(s.outputTokens),
@@ -253,9 +287,9 @@ function updateDashboard() {
 
   // Update sparkline (last 14 days token usage)
   const sparkData = data.dailyTokenHistory.map(d => d.tokens);
-  const sparkLabels = data.dailyTokenHistory.map(d => d.date.slice(5));
   if (sparkData.length > 0) {
-    tokenSpark.setData(sparkLabels, sparkData);
+    const range = `${data.dailyTokenHistory[0].date.slice(5)} ~ ${data.dailyTokenHistory[sparkData.length - 1].date.slice(5)}`;
+    tokenSpark.setData([range], [sparkData]);
   }
 
   // Update model usage box
@@ -270,15 +304,11 @@ function updateDashboard() {
   modelBox.setContent(lines.join('\n'));
 
   // Update activity bar (last 14 days messages)
-  const barTitles = data.dailyHistory.map(d => d.date.slice(5));
-  const barData = data.dailyHistory.map(d => d.messages);
-  if (barData.length > 0) {
-    activityBar.setData({ titles: barTitles, data: barData });
-  }
+  activityBar.setContent(renderBarChart(data.dailyHistory, activityBar.width - 2, activityBar.height - 2));
 
   // Update records box
-  const longestStr = data.longestSession
-    ? formatDuration(data.longestSession)
+  const longestStr = data.longestSession && data.longestSession.duration
+    ? formatDuration(data.longestSession.duration)
     : 'N/A';
   const firstDate = data.firstSessionDate
     ? data.firstSessionDate.slice(0, 10)
@@ -293,7 +323,7 @@ function updateDashboard() {
   // Update projects bar
   const projectCount = data.allProjects ? data.allProjects.length : 0;
   projectsBox.setContent(
-    `{center} 📁 ${projectCount} project${projectCount !== 1 ? 's' : ''} tracked  |  ` +
+    `{center}${projectCount} project${projectCount !== 1 ? 's' : ''} tracked  |  ` +
     `All Time: ${data.aggregate.totalSessions} sessions, ${data.aggregate.totalMessages.toLocaleString()} messages  |  ` +
     `Est. Total Cost: $${data.aggregate.costEstimate.toFixed(2)}{/center}`
   );
