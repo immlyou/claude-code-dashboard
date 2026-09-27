@@ -131,20 +131,37 @@ function main() {
       lines.push('', '{not json');
       fs.writeFileSync(path.join(projDir, 's.jsonl'), lines.join('\n') + '\n');
 
+      // Subagent log for session "s": its usage and tool calls count, its user entries do not.
+      // journal.jsonl (workflow bookkeeping) must be ignored.
+      const subDir = path.join(projDir, 's', 'subagents', 'workflows', 'wf_1');
+      fs.mkdirSync(subDir, { recursive: true });
+      fs.writeFileSync(path.join(subDir, 'agent-a1.jsonl'), [
+        { type: 'user', timestamp: '2026-09-25T17:31:00Z', isSidechain: true, message: { role: 'user', content: 'task' } },
+        { type: 'assistant', timestamp: '2026-09-25T17:31:05Z', requestId: 'r2', isSidechain: true,
+          message: { id: 'm2', model: 'claude-sonnet-4-5', usage: { input_tokens: 4, output_tokens: 3 },
+            content: [{ type: 'tool_use', id: 't2', name: 'Read', input: {} }] } },
+      ].map(l => JSON.stringify(l)).join('\n') + '\n');
+      fs.writeFileSync(path.join(subDir, 'journal.jsonl'), JSON.stringify(asst('2026-09-25T17:32:00Z', [])) + '\n');
+
       const out = execFileSync(process.execPath, ['-e', `
         const { collect } = require(${JSON.stringify(COLLECTOR_PATH)});
         const d = collect();
         const day = d.dailyHistory.find(x => x.date === '2026-09-26') || null;
         const tok = d.dailyTokenHistory.find(x => x.date === '2026-09-26') || null;
         const utcDay = d.dailyHistory.find(x => x.date === '2026-09-25') || null;
-        console.log(JSON.stringify({ day, tok, utcDay }));
+        const proj = d.allProjects.find(p => p.name === 'fixture') || null;
+        console.log(JSON.stringify({ day, tok, utcDay, proj }));
       `], { env: { ...process.env, HOME: tmpHome, TZ: 'Asia/Taipei' }, encoding: 'utf-8' });
-      const { day, tok, utcDay } = JSON.parse(out.trim());
+      const { day, tok, utcDay, proj } = JSON.parse(out.trim());
       assert.ok(day, 'entries at 2026-09-25T17:30Z must bucket to local 2026-09-26 (Asia/Taipei)');
       assert.strictEqual(utcDay, null, 'no entries should land on the UTC date 2026-09-25');
-      assert.strictEqual(day.messages, 1, 'one user entry');
-      assert.strictEqual(day.tools, 1, 'tool_use on a later split line counts once, replayed line not twice');
-      assert.strictEqual(tok.tokens, 15, 'usage repeated across split lines counts once');
+      assert.strictEqual(day.messages, 1, 'one user entry; subagent user entries are not messages');
+      assert.strictEqual(day.sessions, 1, 'subagent logs are not separate sessions');
+      assert.strictEqual(day.tools, 2, 'main tool_use once (split + replayed lines) plus one subagent tool_use');
+      assert.strictEqual(tok.tokens, 15 + 7, 'main usage once plus subagent usage; journal.jsonl ignored');
+      assert.ok(proj, 'fixture project listed');
+      assert.strictEqual(proj.sessionCount, 1, 'project sessionCount excludes subagent logs');
+      assert.strictEqual(proj.messageCount, 1, 'project messageCount excludes subagent user entries');
     } catch (e) {
       failures.push(`[E] fixture: ${e.message}`);
     }

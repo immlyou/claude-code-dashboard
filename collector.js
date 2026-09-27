@@ -194,6 +194,28 @@ function scanFileForStats(filePath) {
   return { totalInput, totalOutput, totalCacheRead, messageCount, toolCallCount, lastActivity, models: [...models], bytesScanned: content.length, dailyBuckets };
 }
 
+function getFileStats(filePath) {
+  const mtimeMs = fs.statSync(filePath).mtimeMs;
+  const cached = fileStatsCache.get(filePath);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.stats;
+  const stats = scanFileForStats(filePath);
+  fileStatsCache.set(filePath, { mtimeMs, bytesScanned: stats.bytesScanned, stats });
+  return stats;
+}
+
+// Recursively lists subagent conversation logs; skips workflow journal.jsonl and other files.
+function findSubagentLogs(dir) {
+  const out = [];
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...findSubagentLogs(p));
+    else if (e.isFile() && e.name.startsWith('agent-') && e.name.endsWith('.jsonl')) out.push(p);
+  }
+  return out;
+}
+
 function scanAllProjects() {
   const now = Date.now();
   if (projectsCache && (now - projectsCacheTime) < PROJECTS_CACHE_TTL) {
@@ -203,17 +225,21 @@ function scanAllProjects() {
   const projects = [];
   const freshDateBuckets = new Map();
 
-  function mergeFileBucketsIntoDate(sessionId, fileDailyBuckets) {
+  // Subagent logs contribute usage (tokens, tool calls) only: their "user" entries are the
+  // parent's prompts/tool results, not the person's messages, and they aren't separate sessions.
+  function mergeFileBucketsIntoDate(sessionId, fileDailyBuckets, isSubagent = false) {
     for (const [date, bucket] of Object.entries(fileDailyBuckets || {})) {
       let agg = freshDateBuckets.get(date);
       if (!agg) {
         agg = { messageCount: 0, toolCallCount: 0, tokensByModel: {}, hourCounts: new Array(24).fill(0), sessionIds: new Set() };
         freshDateBuckets.set(date, agg);
       }
-      agg.messageCount += bucket.messageCount;
       agg.toolCallCount += bucket.toolCallCount;
-      agg.sessionIds.add(sessionId);
-      for (let h = 0; h < 24; h++) agg.hourCounts[h] += bucket.hourCounts[h];
+      if (!isSubagent) {
+        agg.messageCount += bucket.messageCount;
+        agg.sessionIds.add(sessionId);
+        for (let h = 0; h < 24; h++) agg.hourCounts[h] += bucket.hourCounts[h];
+      }
       for (const [model, tok] of Object.entries(bucket.tokensByModel)) {
         agg.tokensByModel[model] = (agg.tokensByModel[model] || 0) + tok;
       }
@@ -236,37 +262,34 @@ function scanAllProjects() {
       let lastActivity = null;
       let models = new Set();
 
+      const addFile = (filePath, sessionId, isSubagent) => {
+        try {
+          const fileStats = getFileStats(filePath);
+          totalInput += fileStats.totalInput;
+          totalOutput += fileStats.totalOutput;
+          totalCacheRead += fileStats.totalCacheRead;
+          if (!isSubagent) messageCount += fileStats.messageCount;
+          toolCallCount += fileStats.toolCallCount;
+          for (const m of fileStats.models) models.add(m);
+          if (fileStats.lastActivity && (!lastActivity || fileStats.lastActivity > lastActivity)) {
+            lastActivity = fileStats.lastActivity;
+          }
+          mergeFileBucketsIntoDate(sessionId, fileStats.dailyBuckets, isSubagent);
+        } catch { /* skip unreadable file */ }
+      };
+
       try {
-        const files = fs.readdirSync(dirPath);
-        for (const f of files) {
-          if (!f.endsWith('.jsonl')) continue;
-          sessionCount++;
-
-          try {
-            const filePath = path.join(dirPath, f);
-            const stat = fs.statSync(filePath);
-            const mtimeMs = stat.mtimeMs;
-            const cached = fileStatsCache.get(filePath);
-
-            let fileStats;
-            if (cached && cached.mtimeMs === mtimeMs) {
-              fileStats = cached.stats;
-            } else {
-              fileStats = scanFileForStats(filePath);
-              fileStatsCache.set(filePath, { mtimeMs, bytesScanned: fileStats.bytesScanned, stats: fileStats });
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.isFile() && e.name.endsWith('.jsonl')) {
+            sessionCount++;
+            addFile(path.join(dirPath, e.name), path.basename(e.name, '.jsonl'), false);
+          } else if (e.isDirectory()) {
+            // <sessionId>/subagents/**/agent-*.jsonl (Agent tool and workflow subagents)
+            for (const subFile of findSubagentLogs(path.join(dirPath, e.name, 'subagents'))) {
+              addFile(subFile, e.name, true);
             }
-
-            totalInput += fileStats.totalInput;
-            totalOutput += fileStats.totalOutput;
-            totalCacheRead += fileStats.totalCacheRead;
-            messageCount += fileStats.messageCount;
-            toolCallCount += fileStats.toolCallCount;
-            for (const m of fileStats.models) models.add(m);
-            if (fileStats.lastActivity && (!lastActivity || fileStats.lastActivity > lastActivity)) {
-              lastActivity = fileStats.lastActivity;
-            }
-            mergeFileBucketsIntoDate(path.basename(f, '.jsonl'), fileStats.dailyBuckets);
-          } catch { /* skip unreadable file */ }
+          }
         }
       } catch { /* skip unreadable dir */ }
 
