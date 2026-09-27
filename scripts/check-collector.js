@@ -36,7 +36,11 @@ function main() {
 
       if (d.dailyHistory.length > 0) {
         const last = d.dailyHistory[d.dailyHistory.length - 1];
-        assert.strictEqual(last.date, today, `dailyHistory should end on today's local date (${today}), got ${last.date}`);
+        // History only contains days with activity, so it ends today only once today has messages
+        assert.ok(last.date <= today, `dailyHistory must not contain future dates (${today}), got ${last.date}`);
+        if (d.today.messages > 0) {
+          assert.strictEqual(last.date, today, `today has messages, so dailyHistory should end on ${today}, got ${last.date}`);
+        }
       }
     } catch (e) {
       failures.push(`[A] ${e.message}`);
